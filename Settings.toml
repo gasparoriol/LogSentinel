@@ -1,0 +1,21 @@
+log_path = "catalina.out"
+source = "tomcat"
+
+[server]
+model = "llama3"
+api_url = "http://localhost:11434/api/generate"
+
+[bff]
+url = "http://tu-bff/api/alerts"
+token = "secret"
+enabled = false
+
+[logger]
+path = "security_audit.log"
+enabled = true
+
+[email]
+recipient = "admin@empresa.com"
+from = "alertas@empresa.com"
+api_url = "http://smtp-relay/api/send"
+enabled = false
