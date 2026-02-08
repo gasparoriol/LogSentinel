@@ -40,10 +40,17 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, config::ConfigError> {
-        let s = config::Config::builder()
-            .add_source(config::File::with_name("Settings")) 
-            .add_source(config::Environment::with_prefix("APP")) 
+    pub fn new(config_path: Option<&str>) -> Result<Self, config::ConfigError> {
+        let mut builder = config::Config::builder();
+
+        if let Some(path) = config_path {
+            builder = builder.add_source(config::File::with_name(path));
+        } else {
+            builder = builder.add_source(config::File::with_name("Settings"));
+        }
+
+        let s = builder
+            .add_source(config::Environment::with_prefix("APP"))
             .build()?;
         s.try_deserialize()
     }

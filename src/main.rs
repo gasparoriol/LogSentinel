@@ -15,9 +15,42 @@ use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink};
 use reqwest::Client;
 
 
+use clap::Parser;
+use daemonize::Daemonize;
+use std::fs::File;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    config: Option<String>,
+
+    #[arg(short, long)]
+    daemon: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let settings = Settings::new().expect("Failed to load settings");
+    let args = Args::parse();
+
+    if args.daemon {
+        let stdout = File::create("/tmp/universal_observability_agent.out").unwrap();
+        let stderr = File::create("/tmp/universal_observability_agent.err").unwrap();
+
+        let daemonize = Daemonize::new()
+            .pid_file("/tmp/universal_observability_agent.pid")
+            .chown_pid_file(true)
+            .working_directory(".")
+            .stdout(stdout)
+            .stderr(stderr);
+
+        match daemonize.start() {
+            Ok(_) => println!("Success, daemonized"),
+            Err(e) => eprintln!("Error, {}", e),
+        }
+    }
+
+    let settings = Settings::new(args.config.as_deref()).expect("Failed to load settings");
     let log_path = settings.log_path;
     let source = settings.source;
     let (tx, mut rx) = mpsc::channel(100);
