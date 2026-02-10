@@ -4,6 +4,7 @@ mod analyzer;
 mod watcher;
 mod config;
 mod dispatcher;
+mod ratelimiter;
 
 use tokio::sync::mpsc;
 use config::Settings;
@@ -13,6 +14,8 @@ use filter::LogFilter;
 use watcher::LogWatcher;
 use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink};
 use reqwest::Client;
+use std::sync::Arc;
+use crate::ratelimiter::AlertRateLimiter;
 
 
 use clap::Parser;
@@ -32,6 +35,8 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let rate_limiter = Arc::new(AlertRateLimiter::new());
+    let dispatcher_rate_limiter = Arc::clone(&rate_limiter);
 
     if args.daemon {
         let stdout = File::create("/tmp/universal_observability_agent.out").unwrap();

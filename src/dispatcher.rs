@@ -82,9 +82,9 @@ impl AlertSink for EmailSink {
     async fn send(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
         let payload = json!({
             "to": &self.recipient,
-            "subject": format!("🚨 Security Alert: {}", alert.severity),
+            "subject": format!("Security Alert: {}", alert.severity),
             "text": format!(
-                "Se ha detectado una amenaza tipo: {}\nOrigen: {}\nDescripción: {}\nLog original: {}",
+                "Detected threat type: {}\nSource: {}\nDescription: {}\nOriginal log: {}",
                 alert.attack_type, alert.source_type, alert.description, alert.original_log
             ),
         });
