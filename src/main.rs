@@ -12,7 +12,7 @@ use models::LogSource;
 use analyzer::Agent;
 use filter::LogFilter;
 use watcher::LogWatcher;
-use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink};
+use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Dispatcher};
 use reqwest::Client;
 use std::sync::Arc;
 use crate::ratelimiter::AlertRateLimiter;
@@ -96,12 +96,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
             }
 
+            let dispatcher = Dispatcher::new(sinks, Arc::clone(&dispatcher_rate_limiter));
+
             if let Some(alert) = agent.analyze(clean_line, &source).await {
                 println!("[CONFIRMED THREAT]: {}", alert);
-                for sink in &sinks {
-                    if let Err(e) = sink.send(&alert).await {
-                        eprintln!("Failed to send alert to a destination: {}", e);
-                    }
+                if let Err(e) = dispatcher.dispatch(&alert).await {
+                     eprintln!("Error dispatching alert: {}", e);
                 }
             } else {
                 println!("False positive: The AI says it's normal.");

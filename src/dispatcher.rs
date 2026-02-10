@@ -3,6 +3,8 @@ use crate::models::SecurityAlert;
 use std::fs::OpenOptions;
 use std::io::Write;
 use serde_json::json;
+use std::sync::Arc;
+use crate::ratelimiter::AlertRateLimiter;
 
 
 #[async_trait]
@@ -117,5 +119,36 @@ impl AlertSink for FileLoggerSink {
         file.write_all(log_line.as_bytes())?;
         Ok(())
     }
-}   
+}
+
+pub struct Dispatcher {
+    sinks: Vec<Box<dyn AlertSink>>,
+    rate_limiter: Arc<AlertRateLimiter>,
+}
+
+impl Dispatcher {
+    pub fn new(sinks: Vec<Box<dyn AlertSink>>, rate_limiter: Arc<AlertRateLimiter>) -> Self {
+        Self {
+            sinks,
+            rate_limiter,
+        }
+    }
+
+    pub async fn dispatch(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
+        // Use the attack_type as the key for rate limiting. 
+        // You could also use source_type or a combination.
+        let key = &alert.attack_type;
+
+        if self.rate_limiter.check_alert(key) {
+            for sink in &self.sinks {
+                if let Err(e) = sink.send(alert).await {
+                    eprintln!("Failed to send alert to a destination: {}", e);
+                }
+            }
+        } else {
+            println!("Alert rate limited for key: {}", key);
+        }
+        Ok(())
+    }
+}
     

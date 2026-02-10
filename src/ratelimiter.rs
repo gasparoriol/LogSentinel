@@ -1,9 +1,9 @@
-use governor::{Quota, RateLimiter, state::InMemoryState, state::keyed::GovRateLimiter, state::keyed::DashMapStateStore};
-use std::num::NonZeroU32;
+use governor::{Quota, RateLimiter, state::keyed::DashMapStateStore, clock::DefaultClock};
+
 use nonzero_ext::nonzero;
 use std::time::Duration;
 
-type KeyedLimiter = GovRateLimiter<String, DashMapStateStore<String>, InMemoryState>;
+type KeyedLimiter = RateLimiter<String, DashMapStateStore<String>, DefaultClock>;
 
 pub struct AlertRateLimiter {
     rate_limiter: KeyedLimiter,
@@ -16,7 +16,7 @@ impl AlertRateLimiter {
         .allow_burst(nonzero!(3u32));
         
         Self {
-            rate_limiter: GovRateLimiter::keyed(quota),
+            rate_limiter: RateLimiter::keyed(quota),
         }
     }
 
