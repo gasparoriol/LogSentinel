@@ -8,12 +8,10 @@ mod ratelimiter;
 
 use tokio::sync::mpsc;
 use config::Settings;
-use models::LogSource;
 use analyzer::Agent;
 use filter::LogFilter;
 use watcher::LogWatcher;
 use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Dispatcher};
-use reqwest::Client;
 use std::sync::Arc;
 use crate::ratelimiter::AlertRateLimiter;
 
@@ -106,6 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("False positive: The AI says it's normal.");
             }
+        } else {
+            println!("Normal log: {}", clean_line);
         }
     }
 

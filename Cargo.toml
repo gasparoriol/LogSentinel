@@ -16,4 +16,5 @@ daemonize = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 governor = "0.6"
 nonzero_ext = "0.3"
+io = "0.0.2"
 
