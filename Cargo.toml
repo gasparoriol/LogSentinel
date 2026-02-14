@@ -1,5 +1,5 @@
 [package]
-name = "universal_observability_agent"
+name = "log_sentinel"
 version = "0.1.0"
 edition = "2024"
 
@@ -17,4 +17,6 @@ chrono = { version = "0.4", features = ["serde"] }
 governor = "0.6"
 nonzero_ext = "0.3"
 io = "0.0.2"
+secrecy = { version = "0.8", features = ["serde"] }
+linemux = "0.3.0"
 

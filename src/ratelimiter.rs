@@ -1,6 +1,5 @@
 use governor::{Quota, RateLimiter, state::keyed::DashMapStateStore, clock::DefaultClock};
 
-use nonzero_ext::nonzero;
 use std::time::Duration;
 
 type KeyedLimiter = RateLimiter<String, DashMapStateStore<String>, DefaultClock>;
@@ -9,11 +8,15 @@ pub struct AlertRateLimiter {
     rate_limiter: KeyedLimiter,
 }
 
+use crate::config::RateLimitConfig;
+
+use std::num::NonZeroU32;
+
 impl AlertRateLimiter {
-    pub fn new() -> Self {
-        let quota = Quota::with_period(Duration::from_secs(30))
-          .unwrap()
-        .allow_burst(nonzero!(3u32));
+    pub fn new(config: &RateLimitConfig) -> Self {
+        let quota = Quota::with_period(Duration::from_secs(config.period_seconds))
+          .expect("Invalid period")
+          .allow_burst(NonZeroU32::new(config.burst).expect("Burst must be non-zero"));
         
         Self {
             rate_limiter: RateLimiter::keyed(quota),

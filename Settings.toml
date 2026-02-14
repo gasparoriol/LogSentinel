@@ -2,8 +2,10 @@ log_path = "catalina.out"
 source = "tomcat"
 
 [server]
+provider = "ollama" # or "openai" or "gemini"
 model = "llama3"
 api_url = "http://localhost:11434/api/generate"
+api_key = "sk-..." # Only for openai or gemini    
 
 [bff]
 url = "http://tu-bff/api/alerts"
@@ -19,3 +21,31 @@ recipient = "admin@empresa.com"
 from = "alertas@empresa.com"
 api_url = "http://smtp-relay/api/send"
 enabled = false
+
+[rats]
+burst = 3
+period_seconds = 30
+
+[filter]
+exact_patterns = [
+    "PHNjc",
+    "ID0i",
+    "U0VMRUNU",
+    "RElTVElOQ1Q",
+    "PHNjcmlwdD",
+    "Trinity"
+]
+case_insensitive_patterns = [
+    "../", "<?PHP", "CHMOD", "CAT /ETC", "SELECT",
+    "DROP", "OR", "ADMIN", "PASSWORD", "ETC/PASSWD", "SCRIPT", "ALERT(",
+    "..\\", "..%2F..%2F", "../etc/passwd", "../etc/shadow", "../etc/hosts"
+]
+error_codes = ["403", "500", "502", "503", "504"]
+nmap_patterns = [
+    "NMAP",
+    "NSE/",
+    "HNAP1",
+    "NESSUS",
+    "ZGRAB",
+    "CENSYS"
+]

@@ -1,11 +1,13 @@
 use serde::Deserialize;
 use crate::models::LogSource;
-
+use secrecy::SecretString;
 
 #[derive(Debug, Deserialize)]
 pub struct ServerConfig {
+    pub provider: String,
     pub model: String,
     pub api_url: Option<String>,
+    pub api_key: Option<SecretString>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,13 +32,29 @@ pub struct FileConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LogFilterConfig {
+    pub exact_patterns: Vec<String>,
+    pub case_insensitive_patterns: Vec<String>,
+    pub error_codes: Vec<String>,
+    pub nmap_patterns: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RateLimitConfig {
+    pub burst: u32,
+    pub period_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Settings {
     pub server: ServerConfig,
     pub bff: BffConfig,
     pub email: EmailConfig,
+    pub rats: RateLimitConfig, // Using 'rats' as convenient short name or 'ratelimit'
     pub logger: FileConfig,
     pub log_path: String,
     pub source: LogSource,
+    pub filter: LogFilterConfig,
 }
 
 impl Settings {

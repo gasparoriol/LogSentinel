@@ -25,13 +25,23 @@ impl AlertSink for ConsoleSink {
 pub struct BffSink {
     pub url: String,
     pub token: String,
+    client: reqwest::Client,
+}
+
+impl BffSink {
+    pub fn new(url: String, token: String) -> Self {
+        Self {
+            url,
+            token,
+            client: reqwest::Client::new(),
+        }
+    }
 }
 
 #[async_trait]
 impl AlertSink for BffSink {
     async fn send(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
-        let client = reqwest::Client::new();
-        client.post(&self.url)
+        self.client.post(&self.url)
             .header("X-Agent-Token", &self.token)
             .json(alert)
             .send()
@@ -42,22 +52,25 @@ impl AlertSink for BffSink {
 
 pub struct SlackSink {
     webhook_url: String,
+    client: reqwest::Client,
 }
 
 impl SlackSink {
     pub fn new(webhook_url: &str) -> Self {
-        Self { webhook_url: webhook_url.to_string() }
+        Self { 
+            webhook_url: webhook_url.to_string(),
+            client: reqwest::Client::new(),
+        }
     }
 }
 
 #[async_trait]
 impl AlertSink for SlackSink {
     async fn send(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
-        let client = reqwest::Client::new();
         let payload = json!({
             "text": format!("ALERT: {:?}", alert),
         });
-        client.post(&self.webhook_url).json(&payload).send().await?;
+        self.client.post(&self.webhook_url).json(&payload).send().await?;
         Ok(())
     }
 } 
