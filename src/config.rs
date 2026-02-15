@@ -8,6 +8,7 @@ pub struct ServerConfig {
     pub model: String,
     pub api_url: Option<String>,
     pub api_key: Option<SecretString>,
+    pub api_key_file: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -59,7 +60,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new(config_path: Option<&str>) -> Result<Self, config::ConfigError> {
+    pub fn new(config_path: Option<&str>, api_key_file_path: Option<String>) -> Result<Self, config::ConfigError> {
         let mut builder = config::Config::builder();
 
         if let Some(path) = config_path {
@@ -71,6 +72,23 @@ impl Settings {
         let s = builder
             .add_source(config::Environment::with_prefix("APP"))
             .build()?;
-        s.try_deserialize()
+        
+        let mut settings: Settings = s.try_deserialize()?;
+
+        // CLI argument overrides config file
+        if let Some(cli_path) = api_key_file_path {
+            settings.server.api_key_file = Some(cli_path);
+        }
+
+        // If api_key is missing but api_key_file is present, load it
+        if settings.server.api_key.is_none() {
+            if let Some(path) = &settings.server.api_key_file {
+                let key = std::fs::read_to_string(path)
+                    .map_err(|e| config::ConfigError::Message(format!("Failed to read api_key_file '{}': {}", path, e)))?;
+                settings.server.api_key = Some(SecretString::new(key.trim().to_string()));
+            }
+        }
+
+        Ok(settings)
     }
 }

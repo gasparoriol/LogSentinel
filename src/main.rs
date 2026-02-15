@@ -30,6 +30,9 @@ struct Args {
 
     #[arg(short, long)]
     daemon: bool,
+
+    #[arg(long)]
+    api_key_file: Option<String>,
 }
 
 #[tokio::main]
@@ -54,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let settings = Settings::new(args.config.as_deref()).expect("Failed to load settings");
+    let settings = Settings::new(args.config.as_deref(), args.api_key_file).expect("Failed to load settings");
     let log_path = settings.log_path.clone();
     let source = settings.source.clone();
     
@@ -99,7 +102,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut log_buffer = String::new();
-    let mut last_log_time = tokio::time::Instant::now();
     let log_timeout = tokio::time::Duration::from_millis(300); // Wait 300ms for more lines
 
     loop {
@@ -131,7 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 log_buffer.push_str(&clean_line);
-                last_log_time = tokio::time::Instant::now();
             }
             _ = tokio::time::sleep(log_timeout), if !log_buffer.is_empty() => {
                  // Timeout reached, flush buffer
