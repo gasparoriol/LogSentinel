@@ -37,6 +37,7 @@ pub struct LogFilterConfig {
     pub case_insensitive_patterns: Vec<String>,
     pub error_codes: Vec<String>,
     pub nmap_patterns: Vec<String>,
+    pub multiline_pattern: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

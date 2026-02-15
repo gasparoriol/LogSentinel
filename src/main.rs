@@ -12,6 +12,7 @@ use config::Settings;
 use analyzer::Agent;
 use filter::LogFilter;
 use watcher::LogWatcher;
+use models::LogSource;
 use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Dispatcher};
 use std::sync::Arc;
 use crate::ratelimiter::AlertRateLimiter;
@@ -90,56 +91,112 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("LogSentinel started. Watching log file: {}", log_path);
 
-    while let Some(line) = rx.recv().await {
-        let clean_line = line.trim().to_string();
-        
-        // Clone Arcs for the background task
-        let filter = filter.clone();
-        let agent = agent.clone();
-        let settings = settings.clone();
-        let dispatcher_rate_limiter = dispatcher_rate_limiter.clone();
-        let source = source.clone();
+    let multiline_pattern = settings.filter.multiline_pattern.clone();
+    let multiline_regex = if let Some(pattern) = &multiline_pattern {
+        Some(regex::Regex::new(pattern).expect("Invalid multiline pattern regex"))
+    } else {
+        None
+    };
 
-        tokio::spawn(async move {
-            if filter.is_suspicious(&clean_line) {
-                println!("Suspicious log detected. Analyzing...");
-                
-                let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
+    let mut log_buffer = String::new();
+    let mut last_log_time = tokio::time::Instant::now();
+    let log_timeout = tokio::time::Duration::from_millis(300); // Wait 300ms for more lines
 
-                if settings.bff.enabled {
-                    sinks.push(Box::new(BffSink::new(
-                        settings.bff.url.clone(),
-                        settings.bff.token.clone(),
-                    )));
-                }
+    loop {
+        tokio::select! {
+            Some(line) = rx.recv() => {
+                let clean_line = line.trim_end().to_string(); // Keep indentation but trim end
 
-                if settings.logger.enabled {
-                    sinks.push(Box::new(FileLoggerSink {
-                        path: settings.logger.path.clone(),
-                    }));
-                }
+                let is_new_entry = if let Some(re) = &multiline_regex {
+                    re.is_match(&clean_line)
+                } else {
+                    true // If no pattern, every line is new
+                };
 
-                if settings.email.enabled {
-                    sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
-                }
-
-                let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
-
-                if let Some(alert) = agent.analyze(&clean_line, &source).await {
-                    println!("[CONFIRMED THREAT]: {}", alert);
-                    if let Err(e) = dispatcher.dispatch(&alert).await {
-                         eprintln!("Error dispatching alert: {}", e);
+                if is_new_entry {
+                    if !log_buffer.is_empty() {
+                         process_log(
+                             log_buffer.clone(), 
+                             filter.clone(), 
+                             agent.clone(), 
+                             settings.clone(), 
+                             dispatcher_rate_limiter.clone(), 
+                             source.clone()
+                         ).await;
+                         log_buffer.clear();
                     }
                 } else {
-                    println!("False positive: The AI says it's normal.");
+                    if !log_buffer.is_empty() {
+                        log_buffer.push('\n');
+                    }
                 }
-            } else {
-                // Keep this brief or remove if too noisy at high volume
-                // println!("Normal log: {}", clean_line);
+                log_buffer.push_str(&clean_line);
+                last_log_time = tokio::time::Instant::now();
             }
-        });
+            _ = tokio::time::sleep(log_timeout), if !log_buffer.is_empty() => {
+                 // Timeout reached, flush buffer
+                 process_log(
+                     log_buffer.clone(), 
+                     filter.clone(), 
+                     agent.clone(), 
+                     settings.clone(), 
+                     dispatcher_rate_limiter.clone(), 
+                     source.clone()
+                 ).await;
+                 log_buffer.clear();
+            }
+            else => {
+                // Channel closed and buffer empty
+                break;
+            }
+        }
     }
 
     Ok(())
+}
+
+async fn process_log(
+    line: String,
+    filter: Arc<LogFilter>,
+    agent: Arc<Agent>,
+    settings: Settings,
+    dispatcher_rate_limiter: Arc<AlertRateLimiter>,
+    source: LogSource,
+) {
+    tokio::spawn(async move {
+        if filter.is_suspicious(&line) {
+            println!("Suspicious log detected. Analyzing...");
+            
+            let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
+
+            if settings.bff.enabled {
+                sinks.push(Box::new(BffSink::new(
+                    settings.bff.url.clone(),
+                    settings.bff.token.clone(),
+                )));
+            }
+
+            if settings.logger.enabled {
+                sinks.push(Box::new(FileLoggerSink {
+                    path: settings.logger.path.clone(),
+                }));
+            }
+
+            if settings.email.enabled {
+                sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
+            }
+
+            let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
+
+            if let Some(alert) = agent.analyze(&line, &source).await {
+                println!("[CONFIRMED THREAT]: {}", alert);
+                if let Err(e) = dispatcher.dispatch(&alert).await {
+                        eprintln!("Error dispatching alert: {}", e);
+                }
+            } else {
+                println!("False positive: The AI says it's normal.");
+            }
+        }
+    });
 }
 
