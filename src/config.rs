@@ -2,7 +2,7 @@ use serde::Deserialize;
 use crate::models::LogSource;
 use secrecy::SecretString;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ServerConfig {
     pub provider: String,
     pub model: String,
@@ -10,14 +10,14 @@ pub struct ServerConfig {
     pub api_key: Option<SecretString>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct BffConfig {
     pub url: String,
     pub token: String,
     pub enabled: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct EmailConfig {
     pub recipient: String,
     pub from: String,
@@ -25,13 +25,13 @@ pub struct EmailConfig {
     pub enabled: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct FileConfig {
     pub path: String,
     pub enabled: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct LogFilterConfig {
     pub exact_patterns: Vec<String>,
     pub case_insensitive_patterns: Vec<String>,
@@ -39,13 +39,13 @@ pub struct LogFilterConfig {
     pub nmap_patterns: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct RateLimitConfig {
     pub burst: u32,
     pub period_seconds: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
     pub server: ServerConfig,
     pub bff: BffConfig,

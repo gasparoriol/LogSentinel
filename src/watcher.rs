@@ -1,6 +1,7 @@
 use linemux::MuxedLines;
 use tokio::sync::mpsc;
 
+#[derive(Clone, Debug)]
 pub struct LogWatcher {
     path: String,
 }
@@ -10,7 +11,7 @@ impl LogWatcher {
         Self { path: path.to_string() }
     }
 
-    pub async fn watch(&self, tx: mpsc::Sender<String>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn watch(&self, tx: mpsc::Sender<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut lines = MuxedLines::new()?;
         
         lines.add_file_from_start(&self.path).await?;

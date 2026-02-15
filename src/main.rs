@@ -60,59 +60,84 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_limiter = Arc::new(AlertRateLimiter::new(&settings.rats));
     let dispatcher_rate_limiter = Arc::clone(&rate_limiter);
 
-    let (tx, mut rx) = mpsc::channel(100);
+    let (tx, mut rx) = mpsc::channel(10_000);
 
     let provider: Box<dyn LLMProvider> = get_provider(&settings);
 
-    let agent = Agent::new(provider);
+    // Agent holds the provider (Box<dyn LLMProvider>) so we wrap Agent in Arc
+    let agent = Arc::new(Agent::new(provider));
     let watcher = LogWatcher::new(&log_path);
-    let filter = LogFilter::new(settings.filter);
+    let filter = Arc::new(LogFilter::new(settings.filter.clone()));
+    
     tokio::spawn(async move {
-        if let Err(e) = watcher.watch(tx).await {
-            eprintln!("Error in the watcher: {:?}", e);
+        loop {
+            let watcher = watcher.clone();
+            let tx = tx.clone();
+            
+            let task = tokio::spawn(async move {
+                watcher.watch(tx).await
+            });
+
+            match task.await {
+                Ok(Ok(())) => eprintln!("Watcher exited cleanly. Restarting check in 5s..."),
+                Ok(Err(e)) => eprintln!("Watcher failed: {:?}. Restarting in 5s...", e),
+                Err(e) => eprintln!("Watcher panicked or was cancelled: {:?}. Restarting in 5s...", e),
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 
     println!("LogSentinel started. Watching log file: {}", log_path);
 
     while let Some(line) = rx.recv().await {
-        let clean_line = line.trim();
+        let clean_line = line.trim().to_string();
         
-        if filter.is_suspicious(clean_line) {
-            println!("Suspicious log detected. Analyzing...");
-            
-            let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
+        // Clone Arcs for the background task
+        let filter = filter.clone();
+        let agent = agent.clone();
+        let settings = settings.clone();
+        let dispatcher_rate_limiter = dispatcher_rate_limiter.clone();
+        let source = source.clone();
 
-            if settings.bff.enabled {
-                sinks.push(Box::new(BffSink::new(
-                    settings.bff.url.clone(),
-                    settings.bff.token.clone(),
-                )));
-            }
+        tokio::spawn(async move {
+            if filter.is_suspicious(&clean_line) {
+                println!("Suspicious log detected. Analyzing...");
+                
+                let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
 
-            if settings.logger.enabled {
-                sinks.push(Box::new(FileLoggerSink {
-                    path: settings.logger.path.clone(),
-                }));
-            }
+                if settings.bff.enabled {
+                    sinks.push(Box::new(BffSink::new(
+                        settings.bff.url.clone(),
+                        settings.bff.token.clone(),
+                    )));
+                }
 
-            if settings.email.enabled {
-                sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
-            }
+                if settings.logger.enabled {
+                    sinks.push(Box::new(FileLoggerSink {
+                        path: settings.logger.path.clone(),
+                    }));
+                }
 
-            let dispatcher = Dispatcher::new(sinks, Arc::clone(&dispatcher_rate_limiter));
+                if settings.email.enabled {
+                    sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
+                }
 
-            if let Some(alert) = agent.analyze(clean_line, &source).await {
-                println!("[CONFIRMED THREAT]: {}", alert);
-                if let Err(e) = dispatcher.dispatch(&alert).await {
-                     eprintln!("Error dispatching alert: {}", e);
+                let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
+
+                if let Some(alert) = agent.analyze(&clean_line, &source).await {
+                    println!("[CONFIRMED THREAT]: {}", alert);
+                    if let Err(e) = dispatcher.dispatch(&alert).await {
+                         eprintln!("Error dispatching alert: {}", e);
+                    }
+                } else {
+                    println!("False positive: The AI says it's normal.");
                 }
             } else {
-                println!("False positive: The AI says it's normal.");
+                // Keep this brief or remove if too noisy at high volume
+                // println!("Normal log: {}", clean_line);
             }
-        } else {
-            println!("Normal log: {}", clean_line);
-        }
+        });
     }
 
     Ok(())

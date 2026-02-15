@@ -41,12 +41,32 @@ impl BffSink {
 #[async_trait]
 impl AlertSink for BffSink {
     async fn send(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
-        self.client.post(&self.url)
-            .header("X-Agent-Token", &self.token)
-            .json(alert)
-            .send()
-            .await?;
-        Ok(())
+        let mut attempts = 0;
+        let max_retries = 3;
+        
+        loop {
+            match self.client.post(&self.url)
+                .header("X-Agent-Token", &self.token)
+                .json(alert)
+                .send()
+                .await 
+            {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        return Ok(());
+                    } else {
+                        eprintln!("BffSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                    }
+                },
+                Err(e) => eprintln!("BffSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+            }
+            
+            attempts += 1;
+            if attempts >= max_retries {
+                 return Err("Max retries exceeded for BffSink".into());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
+        }
     }
 }
 
@@ -70,8 +90,28 @@ impl AlertSink for SlackSink {
         let payload = json!({
             "text": format!("ALERT: {:?}", alert),
         });
-        self.client.post(&self.webhook_url).json(&payload).send().await?;
-        Ok(())
+
+        let mut attempts = 0;
+        let max_retries = 3;
+
+        loop {
+            match self.client.post(&self.webhook_url).json(&payload).send().await {
+                Ok(resp) => {
+                     if resp.status().is_success() {
+                        return Ok(());
+                     } else {
+                        eprintln!("SlackSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                     }
+                },
+                Err(e) => eprintln!("SlackSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+            }
+
+            attempts += 1;
+            if attempts >= max_retries {
+                return Err("Max retries exceeded for SlackSink".into());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
+        }
     }
 } 
 pub struct EmailSink {
@@ -105,12 +145,31 @@ impl AlertSink for EmailSink {
         });
 
         
-        self.client.post(&self.api_url)
-            .json(&payload)
-            .send()
-            .await?;
+        let mut attempts = 0;
+        let max_retries = 3;
 
-        Ok(())
+        loop {
+            match self.client.post(&self.api_url)
+                .json(&payload)
+                .send()
+                .await 
+            {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        return Ok(());
+                    } else {
+                         eprintln!("EmailSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                    }
+                },
+                Err(e) => eprintln!("EmailSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+            }
+
+            attempts += 1;
+            if attempts >= max_retries {
+                 return Err("Max retries exceeded for EmailSink".into());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
+        }
     }
 }
 
