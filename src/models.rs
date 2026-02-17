@@ -66,3 +66,40 @@ impl std::fmt::Display for SecurityAlert {
                self.severity, self.attack_type, self.description)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_source_context() {
+        assert!(LogSource::Tomcat.get_context().contains("Tomcat"));
+        assert!(LogSource::Nginx.get_context().contains("Nginx"));
+        assert!(LogSource::Dotnet.get_context().contains(".NET Core"));
+        assert!(LogSource::Generic.get_context().contains("genérico"));
+    }
+
+    #[test]
+    fn test_log_source_as_str() {
+        assert_eq!(LogSource::Tomcat.as_str(), "Tomcat");
+        assert_eq!(LogSource::Nginx.as_str(), "Nginx");
+        assert_eq!(LogSource::Dotnet.as_str(), "Dotnet");
+        assert_eq!(LogSource::Generic.as_str(), "Generic");
+    }
+
+    #[test]
+    fn test_security_alert_display() {
+        let alert = SecurityAlert {
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            source_type: "Tomcat".to_string(),
+            severity: "HIGH".to_string(),
+            attack_type: "SQLi".to_string(),
+            description: "Potential SQL injection".to_string(),
+            original_log: "SELECT * FROM users".to_string(),
+        };
+        let display = format!("{}", alert);
+        assert!(display.contains("HIGH"));
+        assert!(display.contains("SQLi"));
+        assert!(display.contains("Potential SQL injection"));
+    }
+}

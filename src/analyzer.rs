@@ -33,3 +33,68 @@ impl Agent {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use std::sync::{Arc, Mutex};
+
+    struct MockLLMProvider {
+        response: Arc<Mutex<String>>,
+    }
+
+    impl MockLLMProvider {
+        fn new(response: &str) -> Self {
+            Self {
+                response: Arc::new(Mutex::new(response.to_string())),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LLMProvider for MockLLMProvider {
+        async fn analyze(&self, _log_line: &str, _source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+            Ok(self.response.lock().unwrap().clone())
+        }
+        fn name(&self) -> String {
+            "Mock".to_string()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_analyze_threat() {
+        let response_json = r#"{"severity": "HIGH", "attack_type": "SQLi", "description": "SQL Injection detected"}"#;
+        let provider = Box::new(MockLLMProvider::new(response_json));
+        let agent = Agent::new(provider);
+        let source = LogSource::Tomcat;
+        
+        let alert = agent.analyze("SELECT * FROM users", &source).await.unwrap();
+        
+        assert_eq!(alert.severity, "HIGH");
+        assert_eq!(alert.attack_type, "SQLi");
+        assert_eq!(alert.description, "SQL Injection detected");
+    }
+
+    #[tokio::test]
+    async fn test_agent_analyze_non_threat() {
+        let provider = Box::new(MockLLMProvider::new("NULL"));
+        let agent = Agent::new(provider);
+        let source = LogSource::Nginx;
+        
+        let alert = agent.analyze("GET /index.html", &source).await;
+        
+        assert!(alert.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_agent_analyze_malformed_json() {
+        let provider = Box::new(MockLLMProvider::new("not a json"));
+        let agent = Agent::new(provider);
+        let source = LogSource::Dotnet;
+        
+        let alert = agent.analyze("Something happened", &source).await;
+        
+        assert!(alert.is_none());
+    }
+}

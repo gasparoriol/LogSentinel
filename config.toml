@@ -8,7 +8,7 @@ api_url = "http://localhost:11434/api/generate"
 api_key = "sk-..." # Only for openai or gemini    
 
 [bff]
-url = "http://tu-bff/api/alerts"
+url = "http://localhost:3000/api/alerts"
 token = "secret"
 enabled = false
 
@@ -17,8 +17,8 @@ path = "security_audit.log"
 enabled = true
 
 [email]
-recipient = "admin@empresa.com"
-from = "alertas@empresa.com"
+recipient = "[EMAIL_ADDRESS]"
+from = "[EMAIL_ADDRESS]"
 api_url = "http://smtp-relay/api/send"
 enabled = false
 
