@@ -1,22 +1,14 @@
-mod models;
-mod filter;
-mod analyzer;
-mod watcher;
-mod config;
-mod dispatcher;
-mod ratelimiter;
-mod llmprovider;
-
 use tokio::sync::mpsc;
-use config::Settings;
-use analyzer::Agent;
-use filter::LogFilter;
-use watcher::LogWatcher;
-use models::LogSource;
-use dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Dispatcher};
+use log_sentinel::config::Settings;
+use log_sentinel::analyzer::Agent;
+use log_sentinel::filter::LogFilter;
+use log_sentinel::watcher::LogWatcher;
+use log_sentinel::models::LogSource;
+use log_sentinel::dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Dispatcher};
+use log_sentinel::ratelimiter::AlertRateLimiter;
+use log_sentinel::llmprovider::{LLMProvider, get_provider};
+use log_sentinel::aggregator::LogAggregator;
 use std::sync::Arc;
-use crate::ratelimiter::AlertRateLimiter;
-use crate::llmprovider::{LLMProvider, get_provider};
 
 use clap::Parser;
 use daemonize::Daemonize;
@@ -64,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_limiter = Arc::new(AlertRateLimiter::new(&settings.rats));
     let dispatcher_rate_limiter = Arc::clone(&rate_limiter);
 
-    let (tx, mut rx) = mpsc::channel(10_000);
+    let (tx, rx) = mpsc::channel(10_000);
 
     let provider: Box<dyn LLMProvider> = get_provider(&settings);
 
@@ -73,10 +65,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watcher = LogWatcher::new(&log_path);
     let filter = Arc::new(LogFilter::new(settings.filter.clone()));
     
+    // Spawn watcher
+    let watcher_clone = watcher.clone();
+    let tx_clone = tx.clone();
     tokio::spawn(async move {
         loop {
-            let watcher = watcher.clone();
-            let tx = tx.clone();
+            let watcher = watcher_clone.clone();
+            let tx = tx_clone.clone();
             
             let task = tokio::spawn(async move {
                 watcher.watch(tx).await
@@ -94,64 +89,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("LogSentinel started. Watching log file: {}", log_path);
 
-    let multiline_pattern = settings.filter.multiline_pattern.clone();
-    let multiline_regex = if let Some(pattern) = &multiline_pattern {
-        Some(regex::Regex::new(pattern).expect("Invalid multiline pattern regex"))
-    } else {
-        None
-    };
+    // Orchestrate aggregation and processing
+    let aggregator = LogAggregator::new(
+        settings.filter.multiline_pattern.clone(),
+        300 // 300ms timeout
+    );
 
-    let mut log_buffer = String::new();
-    let log_timeout = tokio::time::Duration::from_millis(300); // Wait 300ms for more lines
-
-    loop {
-        tokio::select! {
-            Some(line) = rx.recv() => {
-                let clean_line = line.trim_end().to_string(); // Keep indentation but trim end
-
-                let is_new_entry = if let Some(re) = &multiline_regex {
-                    re.is_match(&clean_line)
-                } else {
-                    true // If no pattern, every line is new
-                };
-
-                if is_new_entry {
-                    if !log_buffer.is_empty() {
-                         process_log(
-                             log_buffer.clone(), 
-                             filter.clone(), 
-                             agent.clone(), 
-                             settings.clone(), 
-                             dispatcher_rate_limiter.clone(), 
-                             source.clone()
-                         ).await;
-                         log_buffer.clear();
-                    }
-                } else {
-                    if !log_buffer.is_empty() {
-                        log_buffer.push('\n');
-                    }
-                }
-                log_buffer.push_str(&clean_line);
-            }
-            _ = tokio::time::sleep(log_timeout), if !log_buffer.is_empty() => {
-                 // Timeout reached, flush buffer
-                 process_log(
-                     log_buffer.clone(), 
-                     filter.clone(), 
-                     agent.clone(), 
-                     settings.clone(), 
-                     dispatcher_rate_limiter.clone(), 
-                     source.clone()
-                 ).await;
-                 log_buffer.clear();
-            }
-            else => {
-                // Channel closed and buffer empty
-                break;
-            }
+    aggregator.run(rx, move |combined_log| {
+        let filter = Arc::clone(&filter);
+        let agent = Arc::clone(&agent);
+        let settings = settings.clone();
+        let rate_limiter = Arc::clone(&dispatcher_rate_limiter);
+        let source = source.clone();
+        
+        async move {
+            process_log(combined_log, filter, agent, settings, rate_limiter, source).await;
         }
-    }
+    }).await;
 
     Ok(())
 }

@@ -4,4 +4,6 @@ pub mod analyzer;
 pub mod watcher;
 pub mod ratelimiter;
 pub mod config;
+pub mod aggregator;
 pub mod llmprovider;
+pub mod dispatcher;
