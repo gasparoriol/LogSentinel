@@ -21,6 +21,7 @@ impl LogWatcher {
 
         while let Ok(Some(line)) = lines.next_line().await {
             let line_str = line.line().to_string();
+            crate::metrics::LOG_LINES_PROCESSED.inc();
             debug!(line = %line_str, "New log line received");
             if tx.send(line_str).await.is_err() {
                 warn!("Log channel closed, stopping watcher");

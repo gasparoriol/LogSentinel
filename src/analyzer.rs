@@ -32,6 +32,39 @@ impl Agent {
 
         None
     }
+
+    pub async fn analyze_batch(&self, lines: &[String], source: &LogSource) -> Vec<SecurityAlert> {
+        let mut alerts = Vec::new();
+        let result_str = match self.provider.analyze_batch(lines, source).await {
+            Ok(s) => s,
+            Err(_) => return alerts,
+        };
+
+        if let Ok(Value::Array(results)) = serde_json::from_str::<Value>(&result_str) {
+            for item in results {
+                let status = item["status"].as_str().unwrap_or("");
+                if status == "NULL" {
+                    continue;
+                }
+
+                let index = item["index"].as_u64().unwrap_or(0) as usize;
+                if index >= lines.len() {
+                    continue;
+                }
+
+                alerts.push(SecurityAlert {
+                    timestamp: Utc::now().to_rfc3339(),
+                    source_type: source.as_str().to_string(),
+                    severity: item["severity"].as_str().unwrap_or("LOW").to_string(),
+                    attack_type: item["attack_type"].as_str().unwrap_or("Unknown").to_string(),
+                    description: item["description"].as_str().unwrap_or("").to_string(),
+                    original_log: lines[index].clone(),
+                });
+            }
+        }
+
+        alerts
+    }
 }
 
 #[cfg(test)]
@@ -57,6 +90,11 @@ mod tests {
         async fn analyze(&self, _log_line: &str, _source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
             Ok(self.response.lock().unwrap().clone())
         }
+        
+        async fn analyze_batch(&self, _log_lines: &[String], _source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+            Ok(self.response.lock().unwrap().clone())
+        }
+
         fn name(&self) -> String {
             "Mock".to_string()
         }
@@ -96,5 +134,28 @@ mod tests {
         let alert = agent.analyze("Something happened", &source).await;
         
         assert!(alert.is_none());
+    }
+    #[tokio::test]
+    async fn test_agent_analyze_batch() {
+        let batch_response = r#"[
+            {"index": 0, "severity": "HIGH", "attack_type": "SQLi", "description": "Threat 1"},
+            {"index": 1, "status": "NULL"},
+            {"index": 2, "severity": "MEDIUM", "attack_type": "XSS", "description": "Threat 2"}
+        ]"#;
+        let provider = Box::new(MockLLMProvider::new(batch_response));
+        let agent = Agent::new(provider);
+        let logs = vec![
+            "SELECT * FROM users".to_string(),
+            "GET /normal".to_string(),
+            "<script>alert(1)</script>".to_string()
+        ];
+        
+        let alerts = agent.analyze_batch(&logs, &LogSource::Generic).await;
+        
+        assert_eq!(alerts.len(), 2);
+        assert_eq!(alerts[0].attack_type, "SQLi");
+        assert_eq!(alerts[0].original_log, logs[0]);
+        assert_eq!(alerts[1].attack_type, "XSS");
+        assert_eq!(alerts[1].original_log, logs[2]);
     }
 }

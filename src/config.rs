@@ -48,6 +48,18 @@ pub struct RateLimitConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct AnalysisConfig {
+    pub batch_size: usize,
+    pub batch_timeout_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MetricsConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
     pub server: ServerConfig,
     pub bff: BffConfig,
@@ -57,6 +69,8 @@ pub struct Settings {
     pub log_path: String,
     pub source: LogSource,
     pub filter: LogFilterConfig,
+    pub analysis: AnalysisConfig,
+    pub metrics: MetricsConfig,
 }
 
 impl Settings {

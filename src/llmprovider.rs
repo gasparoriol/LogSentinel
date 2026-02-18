@@ -9,6 +9,8 @@ use crate::error::AppError;
 #[async_trait]
 pub trait LLMProvider: Send + Sync {
     async fn analyze(&self, log_line: &str, source: &LogSource) -> Result<String, Box<dyn std::error::Error>>;
+    
+    async fn analyze_batch(&self, log_lines: &[String], source: &LogSource) -> Result<String, Box<dyn std::error::Error>>;
 
     fn name(&self) -> String;
 }
@@ -73,6 +75,42 @@ impl LLMProvider for OllamaProvider {
 
     fn name(&self) -> String {
         "Ollama".to_string()
+    }
+
+    async fn analyze_batch(&self, log_lines: &[String], source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+        let mut logs_formatted = String::new();
+        for (i, line) in log_lines.iter().enumerate() {
+            logs_formatted.push_str(&format!("{}. \"{}\"\n", i, line));
+        }
+
+        let prompt = format!(
+            "Act as a Senior SOC Analyst. Analyze these {} logs from {}:\n{}\n
+            Instructions: For each log, if it's a threat, provide severity, attack_type, and description.
+            Respond ONLY with a JSON array of objects, each having:
+            'index': the number of the log
+            'severity': (LOW, MEDIUM, HIGH, CRITICAL)
+            'attack_type': (e.g., SQLi, XSS)
+            'description': brief explanation
+            If a log is fine, the object for that index should be: {{'index': i, 'status': 'NULL'}}.
+            Return ONLY the valid JSON array.",
+            log_lines.len(),
+            source.get_context(),
+            logs_formatted
+        );
+
+        let response = self.client.post(&self.api_url)
+            .json(&json!({
+                "model": &self.model,
+                "prompt": prompt,
+                "stream": false,
+                "format": "json" 
+            }))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+
+        Ok(response["response"].as_str().unwrap_or("[]").to_string())
     }
 }
 
@@ -142,6 +180,42 @@ impl LLMProvider for OpenAiProvider {
     fn name(&self) -> String {
         "OpenAI".to_string()
     }
+
+    async fn analyze_batch(&self, log_lines: &[String], source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+        let mut logs_formatted = String::new();
+        for (i, line) in log_lines.iter().enumerate() {
+            logs_formatted.push_str(&format!("{}. \"{}\"\n", i, line));
+        }
+
+        let prompt = format!(
+            "Analyze these {} logs from {}:\n{}\n
+            Respond ONLY with a JSON array of objects.
+            Each object: 'index', 'severity', 'attack_type', 'description'.
+            If not a threat: {{'index': i, 'status': 'NULL'}}.",
+            log_lines.len(),
+            source.get_context(),
+            logs_formatted
+        );
+
+        let response = self.client.post(&self.api_url)
+              .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
+              .json(&json!({
+                  "model": &self.model,
+                  "messages": [
+                      {"role": "system", "content": "You are a cybersecurity expert. Response in JSON format only (array of objects)."},
+                      {"role": "user", "content": prompt}
+                  ],
+                  "temperature": 0
+              }))
+              .send()
+              .await?
+              .json::<Value>()
+              .await?;
+
+        let content = response["choices"][0]["message"]["content"].as_str().ok_or("No content")?;
+        let cleaned = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+        Ok(cleaned.to_string())
+    }
 }
 
 pub struct GeminiProvider {
@@ -207,7 +281,36 @@ impl LLMProvider for GeminiProvider {
 
         Ok("NULL".to_string())
     }
+    async fn analyze_batch(&self, log_lines: &[String], source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+        let mut logs_formatted = String::new();
+        for (i, line) in log_lines.iter().enumerate() {
+            logs_formatted.push_str(&format!("{}. \"{}\"\n", i, line));
+        }
 
+        let prompt = format!(
+            "Analyze these {} logs from {}:\n{}\n
+            Respond ONLY with a JSON array of objects.
+            Each object: 'index', 'severity', 'attack_type', 'description'.
+            If not a threat: {{'index': i, 'status': 'NULL'}}.",
+            log_lines.len(),
+            source.get_context(),
+            logs_formatted
+        );
+
+        let url = format!("{}/{}:generateContent?key={}", self.api_url, self.model, self.api_key.expose_secret());
+        let response = self.client.post(&url)
+            .json(&json!({
+                "contents": [{ "parts": [{ "text": prompt }] }]
+            }))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+
+        let content = response["candidates"][0]["content"]["parts"][0]["text"].as_str().ok_or("No content")?;
+        let cleaned = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+        Ok(cleaned.to_string())
+    }
     fn name(&self) -> String {
         "Gemini".to_string()
     }
@@ -277,6 +380,41 @@ impl LLMProvider for ClaudeProvider {
 
     fn name(&self) -> String {
         "Claude".to_string()
+    }
+
+    async fn analyze_batch(&self, log_lines: &[String], source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+        let mut logs_formatted = String::new();
+        for (i, line) in log_lines.iter().enumerate() {
+            logs_formatted.push_str(&format!("{}. \"{}\"\n", i, line));
+        }
+
+        let prompt = format!(
+            "Analyze these {} logs from {}:\n{}\n
+            Respond ONLY with a JSON array of objects.
+            Each object: 'index', 'severity', 'attack_type', 'description'.
+            If not a threat: {{'index': i, 'status': 'NULL'}}.",
+            log_lines.len(),
+            source.get_context(),
+            logs_formatted
+        );
+
+        let response = self.client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", self.api_key.expose_secret())
+            .header("anthropic-version", "2023-06-01")
+            .json(&json!({
+                "model": &self.model,
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}]
+            }))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+
+        let content = response["content"][0]["text"].as_str().ok_or("No content")?;
+        let cleaned = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+        Ok(cleaned.to_string())
     }
 }
 

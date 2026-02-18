@@ -11,6 +11,14 @@ url = "http://localhost:3000/api/alerts"
 token = "secret"
 enabled = false
 
+[analysis]
+batch_size = 5
+batch_timeout_ms = 3000
+
+[metrics]
+enabled = true
+port = 9090
+
 [logger]
 path = "security_audit.log"
 enabled = true

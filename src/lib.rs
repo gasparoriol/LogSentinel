@@ -5,6 +5,7 @@ pub mod watcher;
 pub mod ratelimiter;
 pub mod config;
 pub mod aggregator;
+pub mod metrics;
 pub mod llmprovider;
 pub mod dispatcher;
 pub mod error;

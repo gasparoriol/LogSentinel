@@ -8,10 +8,13 @@ use log_sentinel::dispatcher::{AlertSink, BffSink, EmailSink, FileLoggerSink, Di
 use log_sentinel::ratelimiter::AlertRateLimiter;
 use log_sentinel::llmprovider::{LLMProvider, get_provider};
 use log_sentinel::aggregator::LogAggregator;
+use log_sentinel::metrics::REGISTRY;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+use axum::{routing::get, Router};
+use prometheus::{Encoder, TextEncoder};
 use clap::Parser;
 use daemonize::Daemonize;
 use std::fs::File;
@@ -58,10 +61,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let log_path = settings.log_path.clone();
     let source = settings.source.clone();
     
+    // Start Metrics Server if enabled
+    if settings.metrics.enabled {
+        let port = settings.metrics.port;
+        tokio::spawn(async move {
+            let app = Router::new().route("/metrics", get(|| async {
+                let encoder = TextEncoder::new();
+                let metric_families = REGISTRY.gather();
+                let mut buffer = Vec::new();
+                encoder.encode(&metric_families, &mut buffer).unwrap();
+                String::from_utf8(buffer).unwrap()
+            }));
+
+            let addr = format!("0.0.0.0:{}", port);
+            info!(port = %port, "Metrics server listening");
+            let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+    }
+
     let rate_limiter = Arc::new(AlertRateLimiter::new(&settings.rats)?);
     let dispatcher_rate_limiter = Arc::clone(&rate_limiter);
 
     let (tx, rx) = mpsc::channel(10_000);
+    let (analysis_tx, mut analysis_rx) = mpsc::channel(1_000);
 
     let provider: Box<dyn LLMProvider> = get_provider(&settings)?;
 
@@ -149,15 +172,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sinks: Arc<Vec<Box<dyn AlertSink>>> = Arc::new(create_sinks(&settings));
 
+    // Spawn Analysis Batcher
+    let agent_batch = Arc::clone(&agent);
+    let sinks_batch = Arc::clone(&sinks);
+    let rate_limiter_batch = Arc::clone(&dispatcher_rate_limiter);
+    let source_batch = source.clone();
+    let batch_size = settings.analysis.batch_size;
+    let batch_timeout = settings.analysis.batch_timeout_ms;
+
+    tokio::spawn(async move {
+        let mut batch = Vec::new();
+        let mut last_flush = tokio::time::Instant::now();
+
+        loop {
+            let timeout = tokio::time::Duration::from_millis(batch_timeout);
+            let sleep = tokio::time::sleep_until(last_flush + timeout);
+
+            tokio::select! {
+                Some(log) = analysis_rx.recv() => {
+                    batch.push(log);
+                    if batch.len() >= batch_size {
+                        flush_batch(&mut batch, &agent_batch, &sinks_batch, &rate_limiter_batch, &source_batch).await;
+                        last_flush = tokio::time::Instant::now();
+                    }
+                }
+                _ = sleep => {
+                    if !batch.is_empty() {
+                        flush_batch(&mut batch, &agent_batch, &sinks_batch, &rate_limiter_batch, &source_batch).await;
+                    }
+                    last_flush = tokio::time::Instant::now();
+                }
+            }
+        }
+    });
+
     aggregator.run(rx, move |combined_log| {
         let filter = Arc::clone(&filter);
-        let agent = Arc::clone(&agent);
-        let rate_limiter = Arc::clone(&dispatcher_rate_limiter);
-        let source = source.clone();
-        let sinks = Arc::clone(&sinks);
+        let analysis_tx = analysis_tx.clone();
         
         async move {
-            process_log(combined_log, filter, agent, rate_limiter, source, sinks).await;
+            process_log(combined_log, filter, analysis_tx).await;
         }
     }).await;
 
@@ -167,34 +221,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn process_log(
     line: String,
     filter: Arc<LogFilter>,
-    agent: Arc<Agent>,
-    dispatcher_rate_limiter: Arc<AlertRateLimiter>,
-    source: LogSource,
-    sinks: Arc<Vec<Box<dyn AlertSink>>>,
+    analysis_tx: mpsc::Sender<String>,
 ) {
-    tokio::spawn(async move {
-        if filter.is_suspicious(&line) {
-            info!("Suspicious log detected, sending to AI analysis");
+    if filter.is_suspicious(&line) {
+        log_sentinel::metrics::SUSPICIOUS_LOGS.inc();
+        info!(line = %line, "Suspicious log detected, queuing for batch analysis");
+        let _ = analysis_tx.send(line).await;
+    } else {
+        debug!("Log line not suspicious, skipping");
+    }
+}
 
-            let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
+async fn flush_batch(
+    batch: &mut Vec<String>,
+    agent: &Arc<Agent>,
+    sinks: &Arc<Vec<Box<dyn AlertSink>>>,
+    rate_limiter: &Arc<AlertRateLimiter>,
+    source: &LogSource,
+) {
+    let lines_to_analyze = std::mem::take(batch);
+    let count = lines_to_analyze.len();
+    info!(count, "Flushing analysis batch");
+    log_sentinel::metrics::ANALYSIS_BATCHES.inc();
 
-            if let Some(alert) = agent.analyze(&line, &source).await {
-                info!(
-                    severity = %alert.severity,
-                    attack_type = %alert.attack_type,
-                    description = %alert.description,
-                    "[CONFIRMED THREAT]"
-                );
-                if let Err(e) = dispatcher.dispatch(&alert).await {
-                    error!(error = %e, "Error dispatching alert");
-                }
-            } else {
-                debug!("AI analysis: log entry is not a threat (false positive)");
+    let start = std::time::Instant::now();
+    let alerts = agent.analyze_batch(&lines_to_analyze, source).await;
+    let duration = start.elapsed().as_secs_f64();
+    log_sentinel::metrics::ANALYSIS_LATENCY.observe(duration);
+
+    if !alerts.is_empty() {
+        let dispatcher = Dispatcher::new(Arc::clone(sinks), Arc::clone(rate_limiter));
+        for alert in alerts {
+            log_sentinel::metrics::CONFIRMED_THREATS.inc();
+            info!(
+                severity = %alert.severity,
+                attack_type = %alert.attack_type,
+                "[CONFIRMED THREAT FROM BATCH]"
+            );
+            if let Err(e) = dispatcher.dispatch(&alert).await {
+                error!(error = %e, "Error dispatching alert from batch");
             }
-        } else {
-            debug!("Log line not suspicious, skipping");
         }
-    });
+    } else {
+        info!("Batch analysis complete: no threats confirmed");
+    }
 }
 
 fn create_sinks(settings: &Settings) -> Vec<Box<dyn AlertSink>> {

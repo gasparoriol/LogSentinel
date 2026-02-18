@@ -257,6 +257,7 @@ impl Dispatcher {
             for sink in &*self.sinks {
                 if let Err(e) = sink.send(alert).await {
                     error!(error = %e, "Failed to send alert to a destination");
+                    crate::metrics::DISPATCH_FAILURES.inc();
                 }
             }
         } else {
