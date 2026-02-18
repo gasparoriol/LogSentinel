@@ -65,3 +65,57 @@ id = "trinity-scanner"
 pattern = "Trinity"
 type = "exact"
 description = "Detection of the Trinity vulnerability scanner."
+
+[[signatures]]
+id = "log4shell"
+pattern = "\\$\\{jndi:(ldap|ldaps|rmi|dns|nis):"
+type = "regex"
+description = "Log4Shell (CVE-2021-44228) JNDI lookup pattern. High risk of RCE."
+
+[[signatures]]
+id = "sqli-union"
+pattern = "UNION SELECT"
+type = "case_insensitive"
+description = "UNION SELECT statement, typical for extracting data via SQL injection."
+
+[[signatures]]
+id = "sqli-timing"
+pattern = "WAITFOR DELAY|SLEEP\\(|BENCHMARK\\("
+type = "regex"
+description = "Time-based blind SQL injection attempt."
+
+[[signatures]]
+id = "rce-command-exec"
+pattern = ";\\s*(id|whoami|cat|ls|pwd|uptime|curl|wget|bash|sh|python|php|perl)"
+type = "regex"
+description = "Potential command injection or post-exploitation activity strings."
+
+[[signatures]]
+id = "lfi-proc-self"
+pattern = "/proc/self/"
+type = "case_insensitive"
+description = "LFI attempt to read process information from /proc."
+
+[[signatures]]
+id = "java-serialization-magic"
+pattern = "\\\\xac\\\\xed\\\\x00\\\\x05"
+type = "regex"
+description = "Java Serialization Magic Header, often found in de-serialization attacks."
+
+[[signatures]]
+id = "spring4shell"
+pattern = "class.module.classLoader"
+type = "case_insensitive"
+description = "Spring4Shell (CVE-2022-22965) exploitation attempt."
+
+[[signatures]]
+id = "webshell-common"
+pattern = "(cmd|shell|pwn|root|backdoor)\\.(php|jsp|asp|aspx|sh)"
+type = "regex"
+description = "Common naming patterns for uploaded web shells."
+
+[[signatures]]
+id = "path-traversal-obfuscated"
+pattern = "\\.\\.[\\\\/]{2,}|%2e%2e%2f"
+type = "regex"
+description = "Obfuscated directory traversal attempt (encoded or double slashes)."

