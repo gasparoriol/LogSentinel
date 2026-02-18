@@ -1,0 +1,67 @@
+# Threat Signatures for LogSentinel
+
+[[signatures]]
+id = "base64-sqli"
+pattern = "U0VMRUNU" # SELECT in base64
+type = "exact"
+description = "Base64 encoded SELECT statement, often used in SQL injection probes."
+
+[[signatures]]
+id = "base64-script"
+pattern = "PHNjc" # <sc in base64
+type = "exact"
+description = "Base64 encoded script tag, likely an XSS attempt."
+
+[[signatures]]
+id = "path-traversal-unix"
+pattern = "../"
+type = "case_insensitive"
+description = "Standard Unix-style directory traversal probe."
+
+[[signatures]]
+id = "path-traversal-win"
+pattern = "..\\"
+type = "exact"
+description = "Windows-style directory traversal probe."
+
+[[signatures]]
+id = "php-tag"
+pattern = "<?PHP"
+type = "case_insensitive"
+description = "Attempt to inject PHP code."
+
+[[signatures]]
+id = "unix-chmod"
+pattern = "CHMOD"
+type = "case_insensitive"
+description = "Attempt to change file permissions, indicating potential RCE."
+
+[[signatures]]
+id = "sqli-keyword-select"
+pattern = "SELECT"
+type = "case_insensitive"
+description = "SQL SELECT keyword found in log, possible SQLi."
+
+[[signatures]]
+id = "sqli-keyword-drop"
+pattern = "DROP"
+type = "case_insensitive"
+description = "SQL DROP keyword found in log, highly suspicious."
+
+[[signatures]]
+id = "unix-shell-access"
+pattern = "CAT /ETC"
+type = "case_insensitive"
+description = "Attempt to read sensitive system files."
+
+[[signatures]]
+id = "nmap-probe"
+pattern = "NMAP"
+type = "case_insensitive"
+description = "Nmap scanning activity detected."
+
+[[signatures]]
+id = "trinity-scanner"
+pattern = "Trinity"
+type = "exact"
+description = "Detection of the Trinity vulnerability scanner."

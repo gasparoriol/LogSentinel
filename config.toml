@@ -34,25 +34,5 @@ burst = 3
 period_seconds = 30
 
 [filter]
-exact_patterns = [
-    "PHNjc",
-    "ID0i",
-    "U0VMRUNU",
-    "RElTVElOQ1Q",
-    "PHNjcmlwdD",
-    "Trinity"
-]
-case_insensitive_patterns = [
-    "../", "<?PHP", "CHMOD", "CAT /ETC", "SELECT",
-    "DROP", "OR", "ADMIN", "PASSWORD", "ETC/PASSWD", "SCRIPT", "ALERT(",
-    "..\\", "..%2F..%2F", "../etc/passwd", "../etc/shadow", "../etc/hosts"
-]
+signatures_path = "signatures.toml"
 error_codes = ["403", "500", "502", "503", "504"]
-nmap_patterns = [
-    "NMAP",
-    "NSE/",
-    "HNAP1",
-    "NESSUS",
-    "ZGRAB",
-    "CENSYS"
-]
