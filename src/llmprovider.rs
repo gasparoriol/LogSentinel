@@ -32,11 +32,15 @@ impl OllamaProvider {
 impl LLMProvider for OllamaProvider {
     async fn analyze(&self, log_line: &str, source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
         let prompt = format!(
-            "Analyze this log of {}: \"{}\". If it is a threat, respond ONLY with a JSON object containing these fields: 
-            'severity' (LOW, MEDIUM, HIGH, CRITICAL), 
-            'attack_type', 
-            and 'description'. 
-            If it is NOT a threat, respond with the word 'NULL'.",
+            "Act as a Senior Security Operations Center (SOC) Analyst. Analyze the following log entry from a {} environment: \"{}\".
+            Instructions:
+            Evaluate indicators of compromise (IoC) such as SQL Injection patterns, Path Traversal (../), unusual User-Agents, or Spring Security exceptions (e.g., InsufficientAuthenticationException repeated).
+            Differentiate between a common application error (e.g., 404 on a missing favicon) and a targeted probe.
+            If the log represents a legitimate security threat or a suspicious reconnaissance activity, return ONLY a JSON object with:
+            'severity': (LOW, MEDIUM, HIGH, CRITICAL)
+            'attack_type': (e.g., SQLi, XSS, Brute Force, Path Traversal, SSRF)
+            'description': A brief explanation of why this is a threat.
+            If the log is a routine system error, a standard 200/302 response, or noise without security implications, respond ONLY with the string: 'NULL'.",
             source.get_context(),
             log_line
         );
