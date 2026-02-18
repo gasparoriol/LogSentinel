@@ -70,25 +70,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watcher = LogWatcher::new(&log_path);
     let filter = Arc::new(LogFilter::new(settings.filter.clone()));
     
-    // Spawn watcher
+    // Spawn watcher with exponential backoff and retry limit
     let watcher_clone = watcher.clone();
     let tx_clone = tx.clone();
     tokio::spawn(async move {
+        const MAX_RETRIES: u32 = 5;
+        const BASE_DELAY_SECS: u64 = 5;
+        const MAX_DELAY_SECS: u64 = 120;
+
+        let mut consecutive_failures: u32 = 0;
+
         loop {
             let watcher = watcher_clone.clone();
             let tx = tx_clone.clone();
-            
+
             let task = tokio::spawn(async move {
                 watcher.watch(tx).await
             });
 
             match task.await {
-                Ok(Ok(())) => info!("Watcher exited cleanly, restarting in 5s"),
-                Ok(Err(e)) => warn!(error = ?e, "Watcher failed, restarting in 5s"),
-                Err(e) => error!(error = ?e, "Watcher panicked or was cancelled, restarting in 5s"),
+                Ok(Ok(())) => {
+                    // Clean exit: reset failure counter and restart quickly
+                    info!("Watcher exited cleanly, restarting in {}s", BASE_DELAY_SECS);
+                    consecutive_failures = 0;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(BASE_DELAY_SECS)).await;
+                }
+                Ok(Err(e)) => {
+                    consecutive_failures += 1;
+                    if consecutive_failures >= MAX_RETRIES {
+                        error!(
+                            error = ?e,
+                            consecutive_failures,
+                            "Watcher failed too many times, giving up"
+                        );
+                        break;
+                    }
+                    let delay = (BASE_DELAY_SECS * (1 << consecutive_failures)).min(MAX_DELAY_SECS);
+                    warn!(
+                        error = ?e,
+                        attempt = consecutive_failures,
+                        max = MAX_RETRIES,
+                        delay_secs = delay,
+                        "Watcher failed, retrying with backoff"
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    if consecutive_failures >= MAX_RETRIES {
+                        error!(
+                            error = ?e,
+                            consecutive_failures,
+                            "Watcher panicked too many times, giving up"
+                        );
+                        break;
+                    }
+                    let delay = (BASE_DELAY_SECS * (1 << consecutive_failures)).min(MAX_DELAY_SECS);
+                    error!(
+                        error = ?e,
+                        attempt = consecutive_failures,
+                        max = MAX_RETRIES,
+                        delay_secs = delay,
+                        "Watcher panicked, retrying with backoff"
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+                }
             }
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 
