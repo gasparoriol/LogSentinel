@@ -212,6 +212,73 @@ impl LLMProvider for GeminiProvider {
     }
 }
 
+pub struct ClaudeProvider {
+    client: Client,
+    api_key: SecretString,
+    model: String,
+}
+
+impl ClaudeProvider {
+    pub fn new(api_key: SecretString, model: &str) -> Self {
+        Self {
+            client: Client::new(),
+            api_key,
+            model: model.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl LLMProvider for ClaudeProvider {
+    async fn analyze(&self, log_line: &str, source: &LogSource) -> Result<String, Box<dyn std::error::Error>> {
+        let prompt = format!(
+            "Analyze this log of {}: \"{}\". If it is a threat, respond ONLY with a JSON object containing: \
+            'severity' (LOW, MEDIUM, HIGH, CRITICAL), 'attack_type', and 'description'. \
+            If it is NOT a threat, respond with the word 'NULL'.",
+            source.get_context(),
+            log_line
+        );
+
+        let response = self.client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", self.api_key.expose_secret())
+            .header("anthropic-version", "2023-06-01")
+            .json(&json!({
+                "model": &self.model,
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}]
+            }))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+
+        let content = response["content"][0]["text"].as_str()
+            .ok_or("No content in Claude response")?;
+
+        if content.contains("NULL") {
+            return Ok("NULL".to_string());
+        }
+
+        let cleaned = content
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        if serde_json::from_str::<Value>(cleaned).is_ok() {
+            return Ok(cleaned.to_string());
+        }
+
+        Ok("NULL".to_string())
+    }
+
+    fn name(&self) -> String {
+        "Claude".to_string()
+    }
+}
+
 pub fn get_provider(settings: &Settings) -> Box<dyn LLMProvider> {
     let model = &settings.server.model;
     let api_url = &settings.server.api_url;
@@ -225,10 +292,14 @@ pub fn get_provider(settings: &Settings) -> Box<dyn LLMProvider> {
             let api_key = settings.server.api_key.clone().expect("API key is required for Gemini provider");
             Box::new(GeminiProvider::new(api_key, model, api_url.clone()))
         },
+        "claude" => {
+            let api_key = settings.server.api_key.clone().expect("API key is required for Claude provider");
+            Box::new(ClaudeProvider::new(api_key, model))
+        },
         "ollama" | _ => {
             // Default to Ollama
             let api_url_str = api_url.as_deref().unwrap_or("http://localhost:11434/api/generate");
-             Box::new(OllamaProvider::new(model, api_url_str))
+            Box::new(OllamaProvider::new(model, api_url_str))
         }
     }
 }

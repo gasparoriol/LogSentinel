@@ -2,7 +2,7 @@ log_path = "catalina.out"
 source = "tomcat"
 
 [server]
-provider = "ollama" # or "openai" or "gemini"
+provider = "ollama" # or "openai" or "gemini" or "claude"
 model = "llama3"
 api_url = "http://localhost:11434/api/generate"
 api_key = "sk-..." # Only for openai or gemini    

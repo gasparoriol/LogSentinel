@@ -8,6 +8,8 @@ LogSentinel is a lightweight, AI-powered log analysis tool designed to detect se
 
 - **Real-time Analysis**: Monitors log files in real-time and detects threats as they happen.
 - **Hybrid Detection**: Combines traditional pattern matching with AI-powered analysis for comprehensive threat detection.
+- **Advanced AI**: Uses Large Language Models (LLMs) to analyze log entries and detect security threats.
+- **Customizable**: Allows users to define their own patterns and rules for threat detection. Use diferent providers for AI analysis. Ollama, OpenAI, Gemini and Claude are supported. And it's easy to add more providers.
 - **Multi-Source Support**: Supports multiple log sources including Tomcat, Nginx, Apache, and .NET.
 - **Lightweight**: Written in Rust for maximum performance and minimal resource usage.
 - **Portable**: Cross-platform support for Linux, Windows, and macOS.
