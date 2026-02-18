@@ -33,8 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Rate limiter initialized after settings load
 
     if args.daemon {
-        let stdout = File::create("/tmp/log_sentinel.out").unwrap();
-        let stderr = File::create("/tmp/log_sentinel.err").unwrap();
+        let stdout = File::create("/tmp/log_sentinel.out")?;
+        let stderr = File::create("/tmp/log_sentinel.err")?;
 
         let daemonize = Daemonize::new()
             .pid_file("/tmp/log_sentinel.pid")
@@ -49,16 +49,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let settings = Settings::new(args.config.as_deref(), args.api_key_file).expect("Failed to load settings");
+    let settings = Settings::new(args.config.as_deref(), args.api_key_file)?;
     let log_path = settings.log_path.clone();
     let source = settings.source.clone();
     
-    let rate_limiter = Arc::new(AlertRateLimiter::new(&settings.rats));
+    let rate_limiter = Arc::new(AlertRateLimiter::new(&settings.rats)?);
     let dispatcher_rate_limiter = Arc::clone(&rate_limiter);
 
     let (tx, rx) = mpsc::channel(10_000);
 
-    let provider: Box<dyn LLMProvider> = get_provider(&settings);
+    let provider: Box<dyn LLMProvider> = get_provider(&settings)?;
 
     // Agent holds the provider (Box<dyn LLMProvider>) so we wrap Agent in Arc
     let agent = Arc::new(Agent::new(provider));

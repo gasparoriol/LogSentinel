@@ -7,3 +7,4 @@ pub mod config;
 pub mod aggregator;
 pub mod llmprovider;
 pub mod dispatcher;
+pub mod error;

@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use secrecy::{SecretString, ExposeSecret};
 use crate::models::LogSource;
 use crate::config::Settings;
+use crate::error::AppError;
 
 #[async_trait]
 pub trait LLMProvider: Send + Sync {
@@ -279,21 +280,24 @@ impl LLMProvider for ClaudeProvider {
     }
 }
 
-pub fn get_provider(settings: &Settings) -> Box<dyn LLMProvider> {
+pub fn get_provider(settings: &Settings) -> crate::error::Result<Box<dyn LLMProvider>> {
     let model = &settings.server.model;
     let api_url = &settings.server.api_url;
 
-    match settings.server.provider.to_lowercase().as_str() {
+    let provider: Box<dyn LLMProvider> = match settings.server.provider.to_lowercase().as_str() {
         "openai" => {
-            let api_key = settings.server.api_key.clone().expect("API key is required for OpenAI provider");
+            let api_key = settings.server.api_key.clone()
+                .ok_or_else(|| AppError::MissingApiKey("openai".into()))?;
             Box::new(OpenAiProvider::new(api_key, model, api_url.clone()))
         },
         "gemini" => {
-            let api_key = settings.server.api_key.clone().expect("API key is required for Gemini provider");
+            let api_key = settings.server.api_key.clone()
+                .ok_or_else(|| AppError::MissingApiKey("gemini".into()))?;
             Box::new(GeminiProvider::new(api_key, model, api_url.clone()))
         },
         "claude" => {
-            let api_key = settings.server.api_key.clone().expect("API key is required for Claude provider");
+            let api_key = settings.server.api_key.clone()
+                .ok_or_else(|| AppError::MissingApiKey("claude".into()))?;
             Box::new(ClaudeProvider::new(api_key, model))
         },
         "ollama" | _ => {
@@ -301,5 +305,7 @@ pub fn get_provider(settings: &Settings) -> Box<dyn LLMProvider> {
             let api_url_str = api_url.as_deref().unwrap_or("http://localhost:11434/api/generate");
             Box::new(OllamaProvider::new(model, api_url_str))
         }
-    }
+    };
+
+    Ok(provider)
 }
