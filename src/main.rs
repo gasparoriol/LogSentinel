@@ -95,15 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         300 // 300ms timeout
     );
 
+    let sinks: Arc<Vec<Box<dyn AlertSink>>> = Arc::new(create_sinks(&settings));
+
     aggregator.run(rx, move |combined_log| {
         let filter = Arc::clone(&filter);
         let agent = Arc::clone(&agent);
-        let settings = settings.clone();
         let rate_limiter = Arc::clone(&dispatcher_rate_limiter);
         let source = source.clone();
+        let sinks = Arc::clone(&sinks);
         
         async move {
-            process_log(combined_log, filter, agent, settings, rate_limiter, source).await;
+            process_log(combined_log, filter, agent, rate_limiter, source, sinks).await;
         }
     }).await;
 
@@ -114,32 +116,13 @@ async fn process_log(
     line: String,
     filter: Arc<LogFilter>,
     agent: Arc<Agent>,
-    settings: Settings,
     dispatcher_rate_limiter: Arc<AlertRateLimiter>,
     source: LogSource,
+    sinks: Arc<Vec<Box<dyn AlertSink>>>,
 ) {
     tokio::spawn(async move {
         if filter.is_suspicious(&line) {
             println!("Suspicious log detected. Analyzing...");
-            
-            let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
-
-            if settings.bff.enabled {
-                sinks.push(Box::new(BffSink::new(
-                    settings.bff.url.clone(),
-                    settings.bff.token.clone(),
-                )));
-            }
-
-            if settings.logger.enabled {
-                sinks.push(Box::new(FileLoggerSink {
-                    path: settings.logger.path.clone(),
-                }));
-            }
-
-            if settings.email.enabled {
-                sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
-            }
 
             let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
 
@@ -153,5 +136,28 @@ async fn process_log(
             }
         }
     });
+}
+
+fn create_sinks(settings: &Settings) -> Vec<Box<dyn AlertSink>> {
+    let mut sinks: Vec<Box<dyn AlertSink>> = Vec::new();
+
+    if settings.bff.enabled {
+        sinks.push(Box::new(BffSink::new(
+            settings.bff.url.clone(),
+            settings.bff.token.clone(),
+        )));
+    }
+
+    if settings.logger.enabled {
+        sinks.push(Box::new(FileLoggerSink {
+            path: settings.logger.path.clone(),
+        }));
+    }
+
+    if settings.email.enabled {
+        sinks.push(Box::new(EmailSink::new(settings.email.recipient.clone(), settings.email.from.clone(), settings.email.api_url.clone())   ));
+    }
+
+    sinks
 }
 

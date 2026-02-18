@@ -194,12 +194,12 @@ impl AlertSink for FileLoggerSink {
 }
 
 pub struct Dispatcher {
-    sinks: Vec<Box<dyn AlertSink>>,
+    sinks: Arc<Vec<Box<dyn AlertSink>>>,
     rate_limiter: Arc<AlertRateLimiter>,
 }
 
 impl Dispatcher {
-    pub fn new(sinks: Vec<Box<dyn AlertSink>>, rate_limiter: Arc<AlertRateLimiter>) -> Self {
+    pub fn new(sinks: Arc<Vec<Box<dyn AlertSink>>>, rate_limiter: Arc<AlertRateLimiter>) -> Self {
         Self {
             sinks,
             rate_limiter,
@@ -212,7 +212,7 @@ impl Dispatcher {
         let key = &alert.attack_type;
 
         if self.rate_limiter.check_alert(key) {
-            for sink in &self.sinks {
+            for sink in &*self.sinks {
                 if let Err(e) = sink.send(alert).await {
                     eprintln!("Failed to send alert to a destination: {}", e);
                 }
