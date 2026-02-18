@@ -19,6 +19,8 @@ nonzero_ext = "0.3"
 io = "0.0.2"
 secrecy = { version = "0.8", features = ["serde"] }
 thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 linemux = "0.3.0"
 regex = "1.12.3"
 

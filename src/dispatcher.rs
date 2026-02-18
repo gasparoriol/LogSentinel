@@ -5,6 +5,7 @@ use std::io::Write;
 use serde_json::json;
 use std::sync::Arc;
 use crate::ratelimiter::AlertRateLimiter;
+use tracing::{debug, error, info, warn};
 
 
 #[async_trait]
@@ -17,7 +18,7 @@ pub struct ConsoleSink;
 #[async_trait]
 impl AlertSink for ConsoleSink {
     async fn send(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
-        println!("ALERT: {:?}", alert);
+        info!(severity = %alert.severity, attack_type = %alert.attack_type, "ALERT dispatched");
         Ok(())
     }
 }
@@ -53,17 +54,31 @@ impl AlertSink for BffSink {
             {
                 Ok(resp) => {
                     if resp.status().is_success() {
+                        debug!(url = %self.url, "BffSink alert sent successfully");
                         return Ok(());
                     } else {
-                        eprintln!("BffSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                        warn!(
+                            url = %self.url,
+                            status = %resp.status(),
+                            attempt = attempts + 1,
+                            max_retries,
+                            "BffSink request failed with non-success status"
+                        );
                     }
                 },
-                Err(e) => eprintln!("BffSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+                Err(e) => warn!(
+                    url = %self.url,
+                    error = %e,
+                    attempt = attempts + 1,
+                    max_retries,
+                    "BffSink request error"
+                ),
             }
             
             attempts += 1;
             if attempts >= max_retries {
-                 return Err("Max retries exceeded for BffSink".into());
+                error!(url = %self.url, "BffSink max retries exceeded");
+                return Err("Max retries exceeded for BffSink".into());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
         }
@@ -98,16 +113,30 @@ impl AlertSink for SlackSink {
             match self.client.post(&self.webhook_url).json(&payload).send().await {
                 Ok(resp) => {
                      if resp.status().is_success() {
+                        debug!(webhook = %self.webhook_url, "SlackSink alert sent successfully");
                         return Ok(());
                      } else {
-                        eprintln!("SlackSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                        warn!(
+                            webhook = %self.webhook_url,
+                            status = %resp.status(),
+                            attempt = attempts + 1,
+                            max_retries,
+                            "SlackSink request failed with non-success status"
+                        );
                      }
                 },
-                Err(e) => eprintln!("SlackSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+                Err(e) => warn!(
+                    webhook = %self.webhook_url,
+                    error = %e,
+                    attempt = attempts + 1,
+                    max_retries,
+                    "SlackSink request error"
+                ),
             }
 
             attempts += 1;
             if attempts >= max_retries {
+                error!(webhook = %self.webhook_url, "SlackSink max retries exceeded");
                 return Err("Max retries exceeded for SlackSink".into());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
@@ -156,17 +185,31 @@ impl AlertSink for EmailSink {
             {
                 Ok(resp) => {
                     if resp.status().is_success() {
+                        debug!(recipient = %self.recipient, "EmailSink alert sent successfully");
                         return Ok(());
                     } else {
-                         eprintln!("EmailSink request failed with status: {}. Attempt {}/{}", resp.status(), attempts + 1, max_retries);
+                        warn!(
+                            recipient = %self.recipient,
+                            status = %resp.status(),
+                            attempt = attempts + 1,
+                            max_retries,
+                            "EmailSink request failed with non-success status"
+                        );
                     }
                 },
-                Err(e) => eprintln!("EmailSink request failed: {}. Attempt {}/{}", e, attempts + 1, max_retries),
+                Err(e) => warn!(
+                    recipient = %self.recipient,
+                    error = %e,
+                    attempt = attempts + 1,
+                    max_retries,
+                    "EmailSink request error"
+                ),
             }
 
             attempts += 1;
             if attempts >= max_retries {
-                 return Err("Max retries exceeded for EmailSink".into());
+                error!(recipient = %self.recipient, "EmailSink max retries exceeded");
+                return Err("Max retries exceeded for EmailSink".into());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
         }
@@ -189,6 +232,7 @@ impl AlertSink for FileLoggerSink {
         let mut file = OpenOptions::new().create(true).append(true).open(&self.path)?;
         let log_line = format!("[{}] {} - {}\n", alert.timestamp, alert.severity, alert.description);
         file.write_all(log_line.as_bytes())?;
+        debug!(path = %self.path, "Alert written to log file");
         Ok(())
     }
 }
@@ -207,20 +251,17 @@ impl Dispatcher {
     }
 
     pub async fn dispatch(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error>> {
-        // Use the attack_type as the key for rate limiting. 
-        // You could also use source_type or a combination.
         let key = &alert.attack_type;
 
         if self.rate_limiter.check_alert(key) {
             for sink in &*self.sinks {
                 if let Err(e) = sink.send(alert).await {
-                    eprintln!("Failed to send alert to a destination: {}", e);
+                    error!(error = %e, "Failed to send alert to a destination");
                 }
             }
         } else {
-            println!("Alert rate limited for key: {}", key);
+            warn!(key = %key, "Alert suppressed by rate limiter");
         }
         Ok(())
     }
 }
-    

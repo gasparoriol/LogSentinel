@@ -9,6 +9,8 @@ use log_sentinel::ratelimiter::AlertRateLimiter;
 use log_sentinel::llmprovider::{LLMProvider, get_provider};
 use log_sentinel::aggregator::LogAggregator;
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 use clap::Parser;
 use daemonize::Daemonize;
@@ -29,8 +31,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     let args = Args::parse();
-    // Rate limiter initialized after settings load
 
     if args.daemon {
         let stdout = File::create("/tmp/log_sentinel.out")?;
@@ -44,8 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .stderr(stderr);
 
         match daemonize.start() {
-            Ok(_) => println!("Success, daemonized"),
-            Err(e) => eprintln!("Error, {}", e),
+            Ok(_) => info!("Process daemonized successfully"),
+            Err(e) => error!(error = %e, "Failed to daemonize process"),
         }
     }
 
@@ -78,16 +83,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
 
             match task.await {
-                Ok(Ok(())) => eprintln!("Watcher exited cleanly. Restarting check in 5s..."),
-                Ok(Err(e)) => eprintln!("Watcher failed: {:?}. Restarting in 5s...", e),
-                Err(e) => eprintln!("Watcher panicked or was cancelled: {:?}. Restarting in 5s...", e),
+                Ok(Ok(())) => info!("Watcher exited cleanly, restarting in 5s"),
+                Ok(Err(e)) => warn!(error = ?e, "Watcher failed, restarting in 5s"),
+                Err(e) => error!(error = ?e, "Watcher panicked or was cancelled, restarting in 5s"),
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 
-    println!("LogSentinel started. Watching log file: {}", log_path);
+    info!(log_path = %log_path, "LogSentinel started");
 
     // Orchestrate aggregation and processing
     let aggregator = LogAggregator::new(
@@ -122,18 +127,25 @@ async fn process_log(
 ) {
     tokio::spawn(async move {
         if filter.is_suspicious(&line) {
-            println!("Suspicious log detected. Analyzing...");
+            info!("Suspicious log detected, sending to AI analysis");
 
             let dispatcher = Dispatcher::new(sinks, dispatcher_rate_limiter);
 
             if let Some(alert) = agent.analyze(&line, &source).await {
-                println!("[CONFIRMED THREAT]: {}", alert);
+                info!(
+                    severity = %alert.severity,
+                    attack_type = %alert.attack_type,
+                    description = %alert.description,
+                    "[CONFIRMED THREAT]"
+                );
                 if let Err(e) = dispatcher.dispatch(&alert).await {
-                        eprintln!("Error dispatching alert: {}", e);
+                    error!(error = %e, "Error dispatching alert");
                 }
             } else {
-                println!("False positive: The AI says it's normal.");
+                debug!("AI analysis: log entry is not a threat (false positive)");
             }
+        } else {
+            debug!("Log line not suspicious, skipping");
         }
     });
 }
