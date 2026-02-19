@@ -266,3 +266,74 @@ impl Dispatcher {
         Ok(())
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        routing::post,
+        Json, Router,
+    };
+    use tokio::net::TcpListener;
+    use serde_json::Value;
+    use std::sync::mpsc;
+
+    #[tokio::test]
+    async fn test_email_sink_send() {
+        let (tx, rx) = mpsc::channel::<Value>();
+
+        let app = Router::new().route("/", post(move |Json(payload): Json<Value>| async move {
+            let _ = tx.send(payload);
+            axum::http::StatusCode::OK
+        }));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let api_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            let server = axum::serve(listener, app);
+            if let Err(e) = server.await {
+                eprintln!("server error: {}", e);
+            }
+        });
+
+        let sink = EmailSink::new(
+            "test@example.com".to_string(),
+            "sender@example.com".to_string(),
+            api_url,
+        );
+
+        let alert = SecurityAlert {
+            timestamp: "now".to_string(),
+            source_type: "Test".to_string(),
+            severity: "HIGH".to_string(),
+            attack_type: "SQLi".to_string(),
+            description: "Test description".to_string(),
+            original_log: "Test log line".to_string(),
+        };
+
+        let result = sink.send(&alert).await;
+        assert!(result.is_ok());
+
+        let received_payload = rx.try_recv().expect("Should have received a payload");
+        assert_eq!(received_payload["to"], "test@example.com");
+        assert_eq!(received_payload["subject"], "Security Alert: HIGH");
+        assert!(received_payload["text"].as_str().unwrap().contains("SQLi"));
+    }
+
+    #[tokio::test]
+    async fn test_console_sink_send() {
+        let sink = ConsoleSink;
+        let alert = SecurityAlert {
+            timestamp: "now".to_string(),
+            source_type: "Test".to_string(),
+            severity: "INFO".to_string(),
+            attack_type: "None".to_string(),
+            description: "Test description".to_string(),
+            original_log: "Test log line".to_string(),
+        };
+
+        let result = sink.send(&alert).await;
+        assert!(result.is_ok());
+    }
+}
