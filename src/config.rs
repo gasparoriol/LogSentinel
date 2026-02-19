@@ -116,12 +116,11 @@ impl Settings {
             settings.server.api_key_file = Some(cli_path);
         }
 
-        if settings.server.api_key.is_none() {
-            if let Some(path) = &settings.server.api_key_file {
+        if settings.server.api_key.is_none()
+            && let Some(path) = &settings.server.api_key_file {
                 let key = std::fs::read_to_string(path)
                     .map_err(|e| config::ConfigError::Message(format!("Failed to read api_key_file '{}': {}", path, e)))?;
                 settings.server.api_key = Some(SecretString::new(key.trim().to_string()));
-            }
         }
 
         // Load threat signatures
@@ -134,5 +133,31 @@ impl Settings {
         settings.filter.signatures = sig_file.signatures;
 
         Ok(settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signature_parsing() {
+        let toml_content = r#"
+            [[signatures]]
+            id = "test-1"
+            pattern = "SELECT"
+            type = "case_insensitive"
+            description = "test desc"
+        "#;
+        let sig_file: SignaturesFile = toml::from_str(toml_content).unwrap();
+        assert_eq!(sig_file.signatures.len(), 1);
+        assert_eq!(sig_file.signatures[0].id, "test-1");
+        assert_eq!(sig_file.signatures[0].sig_type, SignatureType::CaseInsensitive);
+    }
+
+    #[test]
+    fn test_settings_load_failure_missing_file() {
+        let result = Settings::new(Some("non_existent.toml"), None);
+        assert!(result.is_err());
     }
 }

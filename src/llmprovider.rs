@@ -438,7 +438,7 @@ pub fn get_provider(settings: &Settings) -> crate::error::Result<Box<dyn LLMProv
                 .ok_or_else(|| AppError::MissingApiKey("claude".into()))?;
             Box::new(ClaudeProvider::new(api_key, model))
         },
-        "ollama" | _ => {
+        _ => {
             // Default to Ollama
             let api_url_str = api_url.as_deref().unwrap_or("http://localhost:11434/api/generate");
             Box::new(OllamaProvider::new(model, api_url_str))

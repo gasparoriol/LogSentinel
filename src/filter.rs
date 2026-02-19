@@ -24,11 +24,10 @@ impl LogFilter {
                     }
                 }
                 crate::config::SignatureType::Regex => {
-                    if let Ok(re) = regex::Regex::new(&sig.pattern) {
-                        if re.is_match(line) {
+                    if let Ok(re) = regex::Regex::new(&sig.pattern)
+                        && re.is_match(line) {
                             return true;
                         }
-                    }
                 }
             }
         }
@@ -44,10 +43,9 @@ impl LogFilter {
             return true;
         }
 
-        if line.contains("'") || line.contains("--") || line.contains("/*") {
-            if line.contains(" OR ") || line.contains(" AND ") || line.contains("SELECT") {
+        if (line.contains("'") || line.contains("--") || line.contains("/*")) 
+            && (line.contains(" OR ") || line.contains(" AND ") || line.contains("SELECT")) {
                 return true;
-            }
         }
 
         false

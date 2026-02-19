@@ -3,116 +3,100 @@
 LogSentinel is a lightweight, AI-powered log analysis tool designed to detect security threats in real-time. It uses a hybrid approach combining traditional pattern matching with advanced Large Language Models (LLMs) to identify anomalies, attacks, and vulnerabilities in your application logs.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 
 ## Features
 
-- **Real-time Analysis**: Monitors log files in real-time and detects threats as they happen.
-- **Hybrid Detection**: Combines traditional pattern matching with AI-powered analysis for comprehensive threat detection.
-- **Advanced AI**: Uses Large Language Models (LLMs) to analyze log entries and detect security threats.
-- **Customizable**: Allows users to define their own patterns and rules for threat detection. Use diferent providers for AI analysis. Ollama, OpenAI, Gemini and Claude are supported. And it's easy to add more providers.
-- **Multi-Source Support**: Supports multiple log sources including Tomcat, Nginx, Apache, and .NET.
-- **Lightweight**: Written in Rust for maximum performance and minimal resource usage.
-- **Portable**: Cross-platform support for Linux, Windows, and macOS.
+- **Real-time Monitoring**: Tails log files as they grow, analyzing entries instantly.
+- **Hybrid Detection Engine**:
+    - **Threat Signatures**: Fast, rule-based detection using exact, case-insensitive, and regex patterns.
+    - **AI Analysis**: Deep context evaluation using LLMs (Ollama, OpenAI, Gemini, Claude).
+- **Multi-Cloud/Local AI**: Seamlessly switch between local models (Ollama) and cloud providers.
+- **Intelligent Batching**: Optimizes LLM requests via batch processing to reduce latency and costs.
+- **Alerting & Dispatching**: 
+    - Log suspicious activities to a security audit file.
+    - Send notifications to a BFF (Backend For Frontend) API.
+    - Email notifications for critical alerts.
+- **Performance Focused**: Built with Rust and Tokio for high throughput and low resource footprint.
+- **Observability**: Built-in Prometheus metrics exporter on port 9090.
+
+## How it Works
+
+LogSentinel operates as a pipeline:
+1. **Watcher**: Monitors log files (e.g., `catalina.out`, `access.log`) for new entries.
+2. **Aggregator**: Handles multi-line logs (like Java stack traces) to preserve context.
+3. **Filter**: Performs initial rapid screening using `signatures.toml`.
+4. **Analyzer**: Sends suspicious candidates to the configured LLM for final verdict.
+5. **Dispatcher**: Handles rate-limiting and routes alerts to configured sinks (Local Log, API, Email).
+
+```mermaid
+graph TD
+    A[Log Files] --> B[Watcher]
+    B --> C[Aggregator]
+    C --> D[Filter]
+    D -- Potential Threat --> E[Analyzer / LLM]
+    D -- Benign --> F[Discard]
+    E -- Confirmed Threat --> G[Dispatcher]
+    G --> H[Security Log]
+    G --> I[HTTP Alert]
+    G --> J[Email]
+    E -- False Positive --> F
+```
 
 ## Installation
 
 ### Prerequisites
 
 - Rust 1.70 or higher
-- Cargo (Rust package manager)
+- [Ollama](https://ollama.com/) (Optional, for local AI)
 
 ### Building from Source
-
-1. Clone the repository:
 
 ```bash
 git clone https://github.com/gasparoriol/LogSentinel.git
 cd LogSentinel
-```
-
-2. Build the project:
-
-```bash
 cargo build --release
 ```
 
 ## Usage
 
-### Basic Usage
+### Configuration
+
+LogSentinel requires a `config.toml` (main settings) and a `signatures.toml` (threat patterns).
+
+1. Copy the example configuration:
+   ```bash
+   cp config.toml.example config.toml
+   ```
+2. Adjust `config.toml` to point to your log files and choose your AI provider.
+
+### Running
 
 ```bash
-Usage: LogSentinel [OPTIONS]
+./target/release/log_sentinel --config config.toml
+```
 
+### Options
+
+```bash
 Options:
-  -c, --config <CONFIG>              
-  -d, --daemon                       
-      --api-key-file <API_KEY_FILE>  
+  -c, --config <CONFIG>              Path to config file
+  -d, --daemon                       Run in background
+      --api-key-file <API_KEY_FILE>  Path to file containing LLM API key
   -h, --help                         Print help
   -V, --version                      Print version
 ```
 
-### Configuration
+## Threat Signatures
 
-The configuration file is located at `/path/to/config.toml`. It contains the following fields:
+Define your own detection rules in `signatures.toml`:
 
-- `log_sources`: A list of log sources to monitor.
-- `llm_provider`: The LLM provider to use for analysis.
-- `filter_config`: The filter configuration.
-
-### Example Configuration
-
-```
-log_path = "catalina.out"
-source = "tomcat"
-
-[server]
-provider = "ollama" # or "openai" or "gemini"
-model = "llama3"
-api_url = "http://localhost:11434/api/generate"
-api_key = "sk-..." # Only for openai or gemini    
-
-[bff]
-url = "http://localhost:3000/api/alerts"
-token = "secret"
-enabled = false
-
-[logger]
-path = "security_audit.log"
-enabled = true
-
-[email]
-recipient = "[EMAIL_ADDRESS]"
-from = "[EMAIL_ADDRESS]"
-api_url = "http://smtp-relay/api/send"
-enabled = false
-
-[rats]
-burst = 3
-period_seconds = 30
-
-[filter]
-exact_patterns = [
-    "PHNjc",
-    "ID0i",
-    "U0VMRUNU",
-    "RElTVElOQ1Q",
-    "PHNjcmlwdD",
-    "Trinity"
-]
-case_insensitive_patterns = [
-    "../", "<?PHP", "CHMOD", "CAT /ETC", "SELECT",
-    "DROP", "OR", "ADMIN", "PASSWORD", "ETC/PASSWD", "SCRIPT", "ALERT(",
-    "..\\", "..%2F..%2F", "../etc/passwd", "../etc/shadow", "../etc/hosts"
-]
-error_codes = ["403", "500", "502", "503", "504"]
-nmap_patterns = [
-    "NMAP",
-    "NSE/",
-    "HNAP1",
-    "NESSUS",
-    "ZGRAB",
-    "CENSYS"
-]
+```toml
+[[signatures]]
+id = "sqli-union"
+pattern = "UNION SELECT"
+type = "case_insensitive"
+description = "Typical SQL injection probe."
 ```
 
 ## License

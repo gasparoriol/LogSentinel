@@ -1,0 +1,58 @@
+# LogSentinel Configuration Template
+
+# Path to the log file to monitor
+log_path = "catalina.out"
+
+# Source type (e.g., "tomcat", "nginx", "apache", "dotnet")
+source = "tomcat"
+
+[server]
+# LLM Provider: "ollama", "openai", "gemini", or "claude"
+provider = "ollama"
+# Model name to use (e.g., "llama3", "gpt-4", "gemini-pro", "claude-3-opus")
+model = "llama3"
+# API URL (Required for Ollama, optional for others if using standard endpoints)
+api_url = "http://localhost:11434/api/generate"
+# API Key (Required for openai, gemini, claude)
+# api_key = "sk-..." 
+# Alternatively, specify a file containing the key
+# api_key_file = "/path/to/key.txt"
+
+[bff]
+# Endpoint to send alerts to a Backend For Frontend or dashboard
+url = "http://localhost:3000/api/alerts"
+token = "your-secret-token"
+enabled = false
+
+[analysis]
+# Batching settings for LLM analysis
+batch_size = 5
+batch_timeout_ms = 3000
+
+[metrics]
+# Prometheus metrics endpoint
+enabled = true
+port = 9090
+
+[logger]
+# Local security audit log file
+path = "security_audit.log"
+enabled = true
+
+[email]
+# Email alert settings
+recipient = "admin@example.com"
+from = "logsentinel@example.com"
+api_url = "http://smtp-relay/api/send"
+enabled = false
+
+[rats]
+# Alert Rate Limiting (Burst and Period)
+burst = 3
+period_seconds = 30
+
+[filter]
+# Path to the threat signatures file
+signatures_path = "signatures.toml"
+# HTTP error codes to flag as suspicious
+error_codes = ["403", "500", "502", "503", "504"]
