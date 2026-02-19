@@ -16,6 +16,7 @@ use tracing_subscriber::EnvFilter;
 use axum::{routing::get, Router};
 use prometheus::{Encoder, TextEncoder};
 use clap::Parser;
+#[cfg(unix)]
 use daemonize::Daemonize;
 use std::fs::File;
 
@@ -41,19 +42,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if args.daemon {
-        let stdout = File::create("/tmp/log_sentinel.out")?;
-        let stderr = File::create("/tmp/log_sentinel.err")?;
+        #[cfg(unix)]
+        {
+            let stdout = File::create("/tmp/log_sentinel.out")?;
+            let stderr = File::create("/tmp/log_sentinel.err")?;
 
-        let daemonize = Daemonize::new()
-            .pid_file("/tmp/log_sentinel.pid")
-            .chown_pid_file(true)
-            .working_directory(".")
-            .stdout(stdout)
-            .stderr(stderr);
+            let daemonize = Daemonize::new()
+                .pid_file("/tmp/log_sentinel.pid")
+                .chown_pid_file(true)
+                .working_directory(".")
+                .stdout(stdout)
+                .stderr(stderr);
 
-        match daemonize.start() {
-            Ok(_) => info!("Process daemonized successfully"),
-            Err(e) => error!(error = %e, "Failed to daemonize process"),
+            match daemonize.start() {
+                Ok(_) => info!("Process daemonized successfully"),
+                Err(e) => error!(error = %e, "Failed to daemonize process"),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            warn!("Daemonization is only supported on Unix systems (Linux/macOS). Continuing in foreground.");
         }
     }
 
