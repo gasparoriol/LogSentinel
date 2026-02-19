@@ -22,5 +22,6 @@ script = [
     "rustup target add aarch64-apple-darwin x86_64-apple-darwin",
     "cargo build --release --target aarch64-apple-darwin",
     "cargo build --release --target x86_64-apple-darwin",
-    "lipo -create -output logsentinel target/aarch64-apple-darwin/release/logsentinel target/x86_64-apple-darwin/release/logsentinel"
+    "mkdir -p target/release",
+    "lipo -create -output target/release/LogSentinel target/aarch64-apple-darwin/release/LogSentinel target/x86_64-apple-darwin/release/LogSentinel"
 ]

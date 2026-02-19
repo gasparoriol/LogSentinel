@@ -10,6 +10,10 @@ license = "MIT"
 keywords = ["logs", "security", "ai", "threat-detection", "rust"]
 categories = ["command-line-utilities", "network-programming"]
 
+[[bin]]
+name = "LogSentinel"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
