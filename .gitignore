@@ -1,0 +1,6 @@
+/target
+security_audit.log
+catalina.out
+config.toml
+cargo.lock
+**/*.rs.bk

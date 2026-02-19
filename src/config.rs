@@ -102,7 +102,7 @@ impl Settings {
         if let Some(path) = config_path {
             builder = builder.add_source(config::File::with_name(path));
         } else {
-            builder = builder.add_source(config::File::with_name("Settings"));
+            builder = builder.add_source(config::File::with_name("config"));
         }
 
         let s = builder
