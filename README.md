@@ -99,7 +99,31 @@ type = "case_insensitive"
 description = "Typical SQL injection probe."
 ```
 
-## License
+## Monitoring & Observability
+
+LogSentinel exports metrics in Prometheus format. You can easily visualize these metrics using the provided Grafana dashboard.
+
+### 🚀 Quick Start with Docker Compose
+
+We provide a pre-configured stack including Prometheus and Grafana with an automatically imported dashboard.
+
+1.  **Launch the stack**:
+    ```bash
+    docker-compose up -d
+    ```
+2.  **Access Grafana**:
+    Open `http://localhost:3000` in your browser.
+    - **User**: `admin`
+    - **Password**: `admin` (or anonymous access enabled by default)
+
+The dashboard **"LogSentinel Security Overview"** will show you:
+- Real-time processing rate.
+- Suspicious activity spikes.
+- AI analysis latency and batch efficiency.
+- Total threats blocked.
+
+> [!NOTE]
+> By default, Prometheus is configured to look for LogSentinel at `host.docker.internal:9090`. Ensure your metrics server is enabled in `config.toml`.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

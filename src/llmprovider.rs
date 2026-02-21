@@ -85,14 +85,14 @@ impl LLMProvider for OllamaProvider {
 
         let prompt = format!(
             "Act as a Senior SOC Analyst. Analyze these {} logs from {}:\n{}\n
-            Instructions: For each log, if it's a threat, provide severity, attack_type, and description.
-            Respond ONLY with a JSON array of objects, each having:
-            'index': the number of the log
-            'severity': (LOW, MEDIUM, HIGH, CRITICAL)
-            'attack_type': (e.g., SQLi, XSS)
-            'description': brief explanation
-            If a log is fine, the object for that index should be: {{'index': i, 'status': 'NULL'}}.
-            Return ONLY the valid JSON array.",
+            Instructions:
+            1. Evaluate each log for security threats (SQLi, XSS, Path Traversal, etc.).
+            2. For each log, you MUST respond with a JSON object.
+            3. If the log is a THREAT, include: 'index', 'severity' (LOW, MEDIUM, HIGH, CRITICAL), 'attack_type', and 'description'.
+            4. If the log is BENIGN, include: 'index' and 'status': 'NULL'.
+            5. Return the results as a JSON array of these objects under a 'results' key.
+            Example: {{ \"results\": [ {{ \"index\": 0, \"status\": \"NULL\" }}, {{ \"index\": 1, \"severity\": \"HIGH\", ... }} ] }}
+            Return ONLY valid JSON.",
             log_lines.len(),
             source.get_context(),
             logs_formatted

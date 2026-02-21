@@ -37,30 +37,54 @@ impl Agent {
         let mut alerts = Vec::new();
         let result_str = match self.provider.analyze_batch(lines, source).await {
             Ok(s) => s,
-            Err(_) => return alerts,
+            Err(e) => {
+                tracing::error!(error = %e, "LLM batch analysis request failed");
+                return alerts;
+            }
         };
 
-        if let Ok(Value::Array(results)) = serde_json::from_str::<Value>(&result_str) {
-            for item in results {
-                let status = item["status"].as_str().unwrap_or("");
-                if status == "NULL" {
-                    continue;
-                }
+        // Log the raw response at DEBUG level for troubleshooting
+        tracing::debug!(raw_response = %result_str, "Received batch analysis response");
 
-                let index = item["index"].as_u64().unwrap_or(0) as usize;
-                if index >= lines.len() {
-                    continue;
-                }
-
-                alerts.push(SecurityAlert {
-                    timestamp: Utc::now().to_rfc3339(),
-                    source_type: source.as_str().to_string(),
-                    severity: item["severity"].as_str().unwrap_or("LOW").to_string(),
-                    attack_type: item["attack_type"].as_str().unwrap_or("Unknown").to_string(),
-                    description: item["description"].as_str().unwrap_or("").to_string(),
-                    original_log: lines[index].clone(),
-                });
+        // Parse the response, handling both raw arrays and objects containing arrays
+        let parsed_value: Value = match serde_json::from_str(&result_str) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, response = %result_str, "Failed to parse LLM batch response as JSON");
+                return alerts;
             }
+        };
+
+        let results = if let Some(arr) = parsed_value.as_array() {
+            arr.clone()
+        } else if let Some(arr) = parsed_value.get("results").and_then(|v| v.as_array()) {
+            arr.clone()
+        } else if let Some(arr) = parsed_value.get("alerts").and_then(|v| v.as_array()) {
+            arr.clone()
+        } else {
+            tracing::warn!(response = %result_str, "LLM batch response did not contain a valid JSON array or 'results'/'alerts' key");
+            return alerts;
+        };
+
+        for item in results {
+            let status = item["status"].as_str().unwrap_or("");
+            if status == "NULL" {
+                continue;
+            }
+
+            let index = item["index"].as_u64().unwrap_or(0) as usize;
+            if index >= lines.len() {
+                continue;
+            }
+
+            alerts.push(SecurityAlert {
+                timestamp: Utc::now().to_rfc3339(),
+                source_type: source.as_str().to_string(),
+                severity: item["severity"].as_str().unwrap_or("LOW").to_string(),
+                attack_type: item["attack_type"].as_str().unwrap_or("Unknown").to_string(),
+                description: item["description"].as_str().unwrap_or("").to_string(),
+                original_log: lines[index].clone(),
+            });
         }
 
         alerts
