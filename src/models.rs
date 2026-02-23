@@ -12,10 +12,10 @@ pub enum LogSource {
 impl LogSource {
   pub fn get_context(&self) -> &str {
     match self {
-      LogSource::Tomcat => "Java/Tomcat (busca errores JVM, Spring Security y fugas de UUIDs)",
-      LogSource::Dotnet => ".NET Core (busca excepciones de middleware y ataques ASP.NET)",
-      LogSource::Nginx => "Nginx (busca escaneos de rutas y errores 4xx/5xx)",
-      LogSource::Generic => "Servidor genérico",
+      LogSource::Tomcat => "Java/Tomcat (search JVM errors, Spring Security and UUID leaks)",
+      LogSource::Dotnet => ".NET Core (search middleware exceptions and ASP.NET attacks)",
+      LogSource::Nginx => "Nginx (search route scans and 4xx/5xx errors)",
+      LogSource::Generic => "Generic server",
     }
   }
   pub fn as_str(&self) -> &'static str {
